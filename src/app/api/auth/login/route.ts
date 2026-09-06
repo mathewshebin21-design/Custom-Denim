@@ -4,13 +4,27 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth/session";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
 
+// Generous enough for normal typos, tight enough to blunt credential
+// stuffing / brute force from a single source.
+const LIMIT = 10;
+const WINDOW_MS = 5 * 60 * 1000;
+
 export async function POST(request: Request) {
+  const rate = await checkRateLimit("login", getClientIp(request), LIMIT, WINDOW_MS);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Too many login attempts. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = LoginSchema.safeParse(body);
   if (!parsed.success) {

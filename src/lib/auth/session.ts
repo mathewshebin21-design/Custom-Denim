@@ -12,11 +12,50 @@ export type SessionUser = {
   role: "customer" | "artist" | "admin";
 };
 
+const MIN_SECRET_LENGTH = 32;
+// Values that ship in this repo's own .env.example / README as illustrative
+// placeholders — real deployments must not still be using these.
+const KNOWN_PLACEHOLDER_SECRETS = new Set([
+  "replace-with-a-random-32-byte-secret",
+  "dev-only-insecure-secret-change-me-before-deploying",
+]);
+
+let warnedWeakSecretInDev = false;
+
+/**
+ * Every session token is signed with this secret; a weak or leaked one
+ * compromises every account, including admin. In production this throws
+ * rather than silently signing tokens with a guessable key. In development
+ * it only warns once, so the existing local workflow (`openssl rand` never
+ * required just to run `npm run dev`) still works.
+ */
+function assertAuthSecretStrength(secret: string) {
+  const isWeak = secret.length < MIN_SECRET_LENGTH || KNOWN_PLACEHOLDER_SECRETS.has(secret);
+  if (!isWeak) return;
+
+  if (process.env.NODE_ENV === "production") {
+    // Never include the secret's value here — only that it failed the check.
+    throw new Error(
+      `AUTH_SECRET does not meet the minimum strength required outside development ` +
+        `(at least ${MIN_SECRET_LENGTH} random characters, not a known placeholder). ` +
+        `Generate one with: openssl rand -base64 32`,
+    );
+  }
+  if (!warnedWeakSecretInDev) {
+    warnedWeakSecretInDev = true;
+    console.warn(
+      `[auth] AUTH_SECRET is short or a known placeholder. This is only tolerated because ` +
+        `NODE_ENV !== "production" — it must be replaced before deploying.`,
+    );
+  }
+}
+
 function secretKey() {
   const secret = process.env.AUTH_SECRET;
   if (!secret) {
     throw new Error("AUTH_SECRET is not set");
   }
+  assertAuthSecretStrength(secret);
   return new TextEncoder().encode(secret);
 }
 

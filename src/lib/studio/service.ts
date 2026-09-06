@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/auth/guards";
 import { generateCreativeDirections } from "@/lib/ai/creativeDirector";
 import { interpretDesign } from "@/lib/ai/designInterpreter";
@@ -148,6 +149,24 @@ function directionToOutput(direction: { title: string; narrative: string; colorP
   };
 }
 
+/**
+ * (conceptId, versionNumber) is unique at the database level (see
+ * schema.prisma). Two versions racing to claim the same number surface here
+ * as a clean conflict instead of an opaque 500 or — worse — a silent
+ * constraint failure the caller doesn't understand.
+ */
+function isVersionConflict(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
+
+async function nextVersionNumberFor(conceptId: string): Promise<number> {
+  const max = await db.conceptVersion.aggregate({
+    where: { conceptId },
+    _max: { versionNumber: true },
+  });
+  return (max._max.versionNumber ?? 0) + 1;
+}
+
 export async function selectDirection(
   commissionId: string,
   customerId: string,
@@ -177,18 +196,32 @@ export async function selectDirection(
   });
   await db.creativeDirection.update({ where: { id: direction.id }, data: { isSelected: true } });
 
-  const version = await db.conceptVersion.create({
-    data: {
-      conceptId: concept.id,
-      creativeDirectionId: direction.id,
-      versionNumber: 1,
-      designSpecJson: JSON.stringify(spec),
-      imageUrl,
-      feasibilityNotes: JSON.stringify(feasibility),
-      status: "proposed",
-    },
-    include: { creativeDirection: true },
-  });
+  // versionNumber is computed from the current max rather than hardcoded, so
+  // selecting a direction more than once for the same concept (there's no UI
+  // path to this today, but nothing at the API layer prevented it either)
+  // can never collide with an existing version. The @@unique constraint on
+  // (conceptId, versionNumber) is the hard backstop if two requests race.
+  let version;
+  try {
+    const versionNumber = await nextVersionNumberFor(concept.id);
+    version = await db.conceptVersion.create({
+      data: {
+        conceptId: concept.id,
+        creativeDirectionId: direction.id,
+        versionNumber,
+        designSpecJson: JSON.stringify(spec),
+        imageUrl,
+        feasibilityNotes: JSON.stringify(feasibility),
+        status: "proposed",
+      },
+      include: { creativeDirection: true },
+    });
+  } catch (err) {
+    if (isVersionConflict(err)) {
+      throw new ApiError(409, "A version conflict occurred — please refresh and try again.");
+    }
+    throw err;
+  }
 
   await db.concept.update({ where: { id: concept.id }, data: { currentVersionId: version.id } });
   await db.commission.update({ where: { id: commissionId }, data: { status: "revising" } });
@@ -218,30 +251,53 @@ export async function reviseConcept(
 
   const spec = await interpretDesign(intake, directionOutput, priorSpec, feedback);
   const feasibility = await assessFeasibility(commission.garment.label, spec);
-  const nextVersionNumber = currentVersion.versionNumber + 1;
   const imageUrl = generateConceptImage({
     title: direction.title,
     colorPalette: directionOutput.colorPalette,
-    versionSeed: `${direction.id}-v${nextVersionNumber}`,
+    versionSeed: `${direction.id}-v${currentVersion.versionNumber + 1}`,
   });
 
-  const version = await db.conceptVersion.create({
-    data: {
-      conceptId: concept.id,
-      creativeDirectionId: direction.id,
-      versionNumber: nextVersionNumber,
-      designSpecJson: JSON.stringify(spec),
-      imageUrl,
-      feasibilityNotes: JSON.stringify(feasibility),
-      customerFeedback: feedback,
-      status: "revised",
-    },
-    include: { creativeDirection: true },
-  });
+  // Recompute from the current max (not currentVersion.versionNumber + 1)
+  // immediately before the write, so two concurrent revision requests can't
+  // both compute the same "next" number from a now-stale currentVersion.
+  let version;
+  try {
+    const versionNumber = await nextVersionNumberFor(concept.id);
+    version = await db.conceptVersion.create({
+      data: {
+        conceptId: concept.id,
+        creativeDirectionId: direction.id,
+        versionNumber,
+        designSpecJson: JSON.stringify(spec),
+        imageUrl,
+        feasibilityNotes: JSON.stringify(feasibility),
+        customerFeedback: feedback,
+        status: "revised",
+      },
+      include: { creativeDirection: true },
+    });
+  } catch (err) {
+    if (isVersionConflict(err)) {
+      throw new ApiError(409, "A version conflict occurred — please refresh and try again.");
+    }
+    throw err;
+  }
 
   await db.concept.update({ where: { id: concept.id }, data: { currentVersionId: version.id } });
 
   return version;
+}
+
+/**
+ * The price a commission will be ordered at. Exported so the Studio can show
+ * the customer this exact number in the approval-confirmation step before
+ * approveVersion() below uses the same formula to create the real Order.
+ */
+export function computeCommissionPriceCents(commission: {
+  budgetTierCents: number | null;
+  garment: { basePriceCents: number };
+}): number {
+  return commission.budgetTierCents ?? commission.garment.basePriceCents;
 }
 
 export async function approveVersion(
@@ -257,7 +313,7 @@ export async function approveVersion(
 
   await db.conceptVersion.update({ where: { id: version.id }, data: { status: "approved" } });
 
-  const priceCents = commission.budgetTierCents ?? commission.garment.basePriceCents;
+  const priceCents = computeCommissionPriceCents(commission);
 
   const artwork = await db.$transaction(async (tx) => {
     await tx.commission.update({ where: { id: commissionId }, data: { status: "approved" } });

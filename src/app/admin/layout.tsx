@@ -1,6 +1,13 @@
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth/guards";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+// src/proxy.ts already redirects unauthenticated/non-admin requests away
+// from /admin/*, but that is the only line of defense unless every page
+// (and this layout, which every admin page renders inside of) also checks
+// independently. Defense in depth: this must never be the sole gate.
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  await requireAdmin();
+
   return (
     <div>
       <div className="border-b border-line bg-paper-dim/30">

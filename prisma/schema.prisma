@@ -51,7 +51,7 @@ model CustomerProfile {
 
 // type: "jacket" | "jeans" | "vest" | "sneakers" | "other"
 model Garment {
-  id             String @id @default(cuid())
+  id             String  @id @default(cuid())
   type           String
   label          String
   description    String
@@ -81,25 +81,28 @@ model Commission {
   status String @default("intake")
 
   // Studio intake fields
-  storyText     String // customer's story/inspiration, free text
-  aestheticText String? // preferred aesthetic in their own words
-  themesJson    String  @default("[]") // JSON string array
-  colorsJson    String  @default("[]") // JSON string array
-  placement     String? // e.g. "back panel", "left sleeve"
-  occasion      String?
+  storyText       String // customer's story/inspiration, free text
+  aestheticText   String? // preferred aesthetic in their own words
+  themesJson      String  @default("[]") // JSON string array
+  colorsJson      String  @default("[]") // JSON string array
+  placement       String? // e.g. "back panel", "left sleeve"
+  occasion        String?
   budgetTierCents Int?
 
-  referenceImages ReferenceImage[]
-  concepts        Concept[]
-  artistAssignment ArtistAssignment?
-  productionStages ProductionStage[]
+  referenceImages   ReferenceImage[]
+  concepts          Concept[]
+  artistAssignment  ArtistAssignment?
+  productionStages  ProductionStage[]
   productionUpdates ProductionUpdate[]
-  artwork         Artwork?
-  order           Order?
-  review          Review?
+  artwork           Artwork?
+  order             Order?
+  review            Review?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([garmentId])
 }
 
 model ReferenceImage {
@@ -109,6 +112,8 @@ model ReferenceImage {
   url          String
   note         String?
   uploadedAt   DateTime   @default(now())
+
+  @@index([commissionId])
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +121,9 @@ model ReferenceImage {
 // ---------------------------------------------------------------------------
 
 model Concept {
-  id             String  @id @default(cuid())
-  commissionId   String
-  commission     Commission @relation(fields: [commissionId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  commissionId     String
+  commission       Commission @relation(fields: [commissionId], references: [id], onDelete: Cascade)
   currentVersionId String?
 
   creativeDirections CreativeDirection[]
@@ -126,32 +131,41 @@ model Concept {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([commissionId])
 }
 
 // One of the 3 (or more) proposed directions for a concept.
 model CreativeDirection {
-  id            String  @id @default(cuid())
-  conceptId     String
-  concept       Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
-  title         String // e.g. "MEMORY ARCHIVE"
-  narrative     String // why this direction fits their story
-  colorPalette  String // JSON string array of hex/names
-  themesJson    String // JSON string array
-  placement     String?
-  order         Int     @default(0)
-  isSelected    Boolean @default(false)
+  id           String  @id @default(cuid())
+  conceptId    String
+  concept      Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  title        String // e.g. "MEMORY ARCHIVE"
+  narrative    String // why this direction fits their story
+  colorPalette String // JSON string array of hex/names
+  themesJson   String // JSON string array
+  placement    String?
+  order        Int     @default(0)
+  isSelected   Boolean @default(false)
 
   versions ConceptVersion[]
 
   createdAt DateTime @default(now())
+
+  @@index([conceptId])
 }
 
 // status: "draft" | "proposed" | "revision_requested" | "revised" | "approved"
 // Append-only: a revision creates a NEW row, never mutates a prior one.
+// (conceptId, versionNumber) is unique so two concurrent/duplicate writes for
+// the same concept can never silently produce two rows both claiming to be
+// the same version number — see selectDirection()/reviseConcept() in
+// src/lib/studio/service.ts, which compute the next number from the current
+// max rather than hardcoding it, with this constraint as the hard backstop.
 model ConceptVersion {
-  id                  String   @id @default(cuid())
+  id                  String            @id @default(cuid())
   conceptId           String
-  concept             Concept  @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  concept             Concept           @relation(fields: [conceptId], references: [id], onDelete: Cascade)
   creativeDirectionId String
   creativeDirection   CreativeDirection @relation(fields: [creativeDirectionId], references: [id])
   versionNumber       Int
@@ -160,11 +174,14 @@ model ConceptVersion {
   aiRationale         String?
   customerFeedback    String?
   feasibilityNotes    String? // advisory only, from FeasibilityAssistant
-  status              String   @default("proposed")
+  status              String            @default("proposed")
 
   createdAt DateTime @default(now())
 
   approvedAsArtwork Artwork?
+
+  @@unique([conceptId, versionNumber])
+  @@index([creativeDirectionId])
 }
 
 // ---------------------------------------------------------------------------
@@ -197,10 +214,17 @@ model ArtistAssignment {
   artist       Artist     @relation(fields: [artistId], references: [id])
   status       String     @default("assigned")
   assignedAt   DateTime   @default(now())
+
+  @@index([artistId])
 }
 
 // stage: "artist_review" | "base_preparation" | "sketch" | "painting" |
 //        "detail_work" | "quality_control" | "packed" | "shipped" | "delivered"
+// SQLite has no native enum/CHECK-on-existing-table support without a full
+// table rebuild, so this stays a plain String; the canonical value set is
+// enforced at the application boundary (STAGE_ORDER in
+// src/lib/admin/service.ts), not the database, for both this model and
+// ProductionUpdate.stage below.
 model ProductionStage {
   id           String     @id @default(cuid())
   commissionId String
@@ -209,6 +233,8 @@ model ProductionStage {
   enteredAt    DateTime   @default(now())
   exitedAt     DateTime?
   notes        String?
+
+  @@index([commissionId])
 }
 
 model ProductionUpdate {
@@ -219,6 +245,8 @@ model ProductionUpdate {
   photoUrl     String?
   message      String
   createdAt    DateTime   @default(now())
+
+  @@index([commissionId])
 }
 
 // ---------------------------------------------------------------------------
@@ -226,14 +254,14 @@ model ProductionUpdate {
 // ---------------------------------------------------------------------------
 
 model Artwork {
-  id                 String         @id @default(cuid())
-  commissionId       String         @unique
-  commission         Commission     @relation(fields: [commissionId], references: [id], onDelete: Cascade)
-  approvedVersionId  String         @unique
-  approvedVersion    ConceptVersion @relation(fields: [approvedVersionId], references: [id])
-  materials          String?
-  finalDescription   String?
-  completedAt        DateTime?
+  id                String         @id @default(cuid())
+  commissionId      String         @unique
+  commission        Commission     @relation(fields: [commissionId], references: [id], onDelete: Cascade)
+  approvedVersionId String         @unique
+  approvedVersion   ConceptVersion @relation(fields: [approvedVersionId], references: [id])
+  materials         String?
+  finalDescription  String?
+  completedAt       DateTime?
 
   passport ArtPassport?
 
@@ -242,11 +270,11 @@ model Artwork {
 }
 
 model ArtPassport {
-  id                    String   @id @default(cuid())
-  artworkId             String   @unique
-  artwork               Artwork  @relation(fields: [artworkId], references: [id], onDelete: Cascade)
-  pieceId               String   @unique // public-facing piece identifier, e.g. "CD-2026-0001"
-  publicSlug            String   @unique
+  id                    String    @id @default(cuid())
+  artworkId             String    @unique
+  artwork               Artwork   @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  pieceId               String    @unique // public-facing piece identifier, e.g. "CD-2026-0001"
+  publicSlug            String    @unique
   qrCodeDataUrl         String?
   careInstructions      String?
   authenticityStatement String?
@@ -279,13 +307,13 @@ model Order {
 // MVP note: no live payment gateway is wired up; this is an admin-tracked
 // ledger entry until a real processor (e.g. Stripe) is integrated.
 model Payment {
-  id        String   @id @default(cuid())
-  orderId   String   @unique
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  provider  String   @default("manual")
+  id          String    @id @default(cuid())
+  orderId     String    @unique
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider    String    @default("manual")
   amountCents Int
-  status    String   @default("pending")
-  paidAt    DateTime?
+  status      String    @default("pending")
+  paidAt      DateTime?
 
   createdAt DateTime @default(now())
 }
@@ -309,4 +337,6 @@ model Review {
   rating       Int
   text         String?
   createdAt    DateTime   @default(now())
+
+  @@index([customerId])
 }

@@ -6,9 +6,14 @@ import Image from "next/image";
 export function ReferenceUploader({
   urls,
   onChange,
+  commissionId,
 }: {
   urls: string[];
   onChange: (urls: string[]) => void;
+  /** Pass this when the upload is for an existing commission (e.g. an admin
+   * production update) so the server can associate and authorize it; omit
+   * it for pre-commission Studio intake, where no commission exists yet. */
+  commissionId?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -22,6 +27,7 @@ export function ReferenceUploader({
     for (const file of Array.from(files)) {
       const formData = new FormData();
       formData.append("file", file);
+      if (commissionId) formData.append("commissionId", commissionId);
       const res = await fetch("/api/uploads", { method: "POST", body: formData });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

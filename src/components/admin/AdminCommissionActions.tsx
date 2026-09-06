@@ -133,9 +133,19 @@ export function AdvanceStagePanel({
   );
 }
 
-export function ProductionUpdatePanel({ commissionId }: { commissionId: string }) {
+export function ProductionUpdatePanel({
+  commissionId,
+  stageOptions,
+  stageLabels,
+  defaultStage,
+}: {
+  commissionId: string;
+  stageOptions: string[];
+  stageLabels: Record<string, string>;
+  defaultStage: string;
+}) {
   const router = useRouter();
-  const [stage, setStage] = useState("painting");
+  const [stage, setStage] = useState(defaultStage);
   const [message, setMessage] = useState("");
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -164,12 +174,15 @@ export function ProductionUpdatePanel({ commissionId }: { commissionId: string }
   return (
     <div className="border border-line p-6">
       <p className="label-eyebrow text-ink/50 mb-4">Post a Progress Update</p>
-      <input
+      <select
         value={stage}
         onChange={(e) => setStage(e.target.value)}
-        placeholder="stage label, e.g. painting"
         className="w-full border border-line bg-transparent px-4 py-3 text-sm mb-3"
-      />
+      >
+        {stageOptions.map((s) => (
+          <option key={s} value={s}>{stageLabels[s] ?? s}</option>
+        ))}
+      </select>
       <textarea
         rows={2}
         value={message}
@@ -178,7 +191,7 @@ export function ProductionUpdatePanel({ commissionId }: { commissionId: string }
         className="w-full border border-line bg-transparent px-4 py-3 text-sm mb-3"
       />
       <div className="mb-3">
-        <ReferenceUploader urls={photoUrls} onChange={setPhotoUrls} />
+        <ReferenceUploader urls={photoUrls} onChange={setPhotoUrls} commissionId={commissionId} />
       </div>
       {error && <p className="text-sm text-rust mb-2">{error}</p>}
       <Button onClick={submit} disabled={loading || !message.trim()} className="w-full">

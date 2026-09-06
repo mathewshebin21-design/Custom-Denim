@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireSession, ApiError } from "@/lib/auth/guards";
-import { getCommissionDetail } from "@/lib/studio/service";
+import { getCommissionDetail, computeCommissionPriceCents } from "@/lib/studio/service";
 import { StudioWorkspace, type WorkspaceDirection, type WorkspaceVersion } from "@/components/studio/StudioWorkspace";
 
 export const metadata: Metadata = { title: "Your Concept" };
@@ -51,6 +51,7 @@ export default async function CommissionWorkspacePage(props: PageProps<"/create/
         directions={directions}
         versions={versions}
         hasArtwork={Boolean(commission.artwork)}
+        priceCents={computeCommissionPriceCents(commission)}
       />
     </div>
   );

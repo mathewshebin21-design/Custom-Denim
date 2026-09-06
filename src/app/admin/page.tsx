@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth/guards";
 import { formatDate, formatPrice } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Admin Overview" };
 
 export default async function AdminOverviewPage() {
+  // Redundant with AdminLayout's own check and src/proxy.ts — intentionally
+  // so; see the comment on AdminLayout for why this page must not rely on
+  // either of those alone.
+  await requireAdmin();
+
   const [totalCommissions, approvedOrBeyond, succeededPayments, recentCommissions] = await Promise.all([
     db.commission.count(),
     db.commission.count({

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Button, ButtonLink } from "@/components/ui/Button";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatPrice } from "@/lib/format";
 
 export type WorkspaceDirection = {
   id: string;
@@ -47,17 +47,20 @@ export function StudioWorkspace({
   directions,
   versions,
   hasArtwork,
+  priceCents,
 }: {
   commissionId: string;
   commissionStatus: string;
   directions: WorkspaceDirection[];
   versions: WorkspaceVersion[];
   hasArtwork: boolean;
+  priceCents: number;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [confirmingApproval, setConfirmingApproval] = useState(false);
 
   const currentVersion = versions[versions.length - 1] ?? null;
   const awaitingDirectionChoice = versions.length === 0;
@@ -98,7 +101,7 @@ export function StudioWorkspace({
     router.refresh();
   }
 
-  async function approve() {
+  async function confirmApprove() {
     if (!currentVersion) return;
     setLoading("approve");
     setError(null);
@@ -209,7 +212,39 @@ export function StudioWorkspace({
 
         {error && <p className="text-sm text-rust mb-4">{error}</p>}
 
-        {!isApproved && (
+        {!isApproved && confirmingApproval && (
+          <div className="border border-ink p-6 max-w-lg space-y-4">
+            <p className="label-eyebrow text-rust">Confirm Approval</p>
+            <p className="text-sm text-ink/70">
+              You&apos;re approving <span className="font-semibold text-ink">{currentVersion.directionTitle}</span>,
+              version {currentVersion.versionNumber}, at the price shown below.
+            </p>
+            <p className="font-display text-3xl">{formatPrice(priceCents)}</p>
+            <p className="text-xs text-ink/50">
+              Approving creates an order for this piece and moves it into
+              production — this is not a payment yet, and this action cannot
+              be undone from here. Our team will follow up separately about
+              payment.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <Button
+                variant="secondary"
+                disabled={loading !== null}
+                onClick={() => {
+                  setConfirmingApproval(false);
+                  setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button disabled={loading !== null} onClick={confirmApprove}>
+                {loading === "approve" ? "Creating Order…" : "Confirm & Create Order"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!isApproved && !confirmingApproval && (
           <div className="space-y-4 max-w-lg">
             <label className="label-eyebrow block text-ink/60">Request a revision</label>
             <textarea
@@ -223,8 +258,8 @@ export function StudioWorkspace({
               <Button variant="secondary" disabled={loading !== null} onClick={requestRevision}>
                 {loading === "revise" ? "Revising…" : "Request Revision"}
               </Button>
-              <Button disabled={loading !== null} onClick={approve}>
-                {loading === "approve" ? "Approving…" : "Approve This Concept"}
+              <Button disabled={loading !== null} onClick={() => setConfirmingApproval(true)}>
+                Approve This Concept
               </Button>
             </div>
           </div>

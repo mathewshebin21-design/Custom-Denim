@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import { db } from "@/lib/db";
-import { getAdminCommissionDetail, nextStageOptions } from "@/lib/admin/service";
+import { getAdminCommissionDetail, nextStageOptions, STAGE_ORDER, STAGE_LABELS } from "@/lib/admin/service";
 import { suggestArtists } from "@/lib/ai/artistMatchmaker";
+import { requireAdmin } from "@/lib/auth/guards";
 import { formatDate, formatPrice } from "@/lib/format";
 import {
   AssignArtistPanel,
@@ -17,6 +18,10 @@ import {
 export const metadata: Metadata = { title: "Commission — Admin" };
 
 export default async function AdminCommissionDetailPage(props: PageProps<"/admin/commissions/[id]">) {
+  // Redundant with AdminLayout's own check and src/proxy.ts — see the
+  // comment on AdminLayout.
+  await requireAdmin();
+
   const { id } = await props.params;
 
   let commission;
@@ -182,7 +187,12 @@ export default async function AdminCommissionDetailPage(props: PageProps<"/admin
             commissionId={commission.id}
             stageOptions={stageOptions}
           />
-          <ProductionUpdatePanel commissionId={commission.id} />
+          <ProductionUpdatePanel
+            commissionId={commission.id}
+            stageOptions={STAGE_ORDER}
+            stageLabels={STAGE_LABELS}
+            defaultStage={reachedStages[reachedStages.length - 1] ?? STAGE_ORDER[0]}
+          />
           {commission.order && (
             <PaymentPanel commissionId={commission.id} status={commission.order.payment?.status ?? "pending"} />
           )}

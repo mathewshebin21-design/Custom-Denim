@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { listCommissionsForAdmin } from "@/lib/admin/service";
+import { requireAdmin } from "@/lib/auth/guards";
 import { formatDate, formatPrice } from "@/lib/format";
 
 export const metadata: Metadata = { title: "All Commissions" };
 
 export default async function AdminCommissionsPage() {
+  // Redundant with AdminLayout's own check and src/proxy.ts — see the
+  // comment on AdminLayout.
+  await requireAdmin();
+
   const commissions = await listCommissionsForAdmin();
 
   return (

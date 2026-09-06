@@ -4,7 +4,13 @@ import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/auth/guards";
 
-const STAGE_ORDER = [
+// The canonical, ordered set of production stages. SQLite has no native
+// enum/CHECK-on-existing-table support without a full table rebuild (see
+// schema.prisma), so ProductionStage.stage and ProductionUpdate.stage stay
+// plain strings — this list is the single source of truth enforced at the
+// application boundary instead. Exported so the UI (the "advance stage" and
+// "post an update" panels) can only ever offer these values, not free text.
+export const STAGE_ORDER: string[] = [
   "artist_review",
   "base_preparation",
   "sketch",
@@ -15,6 +21,37 @@ const STAGE_ORDER = [
   "shipped",
   "delivered",
 ];
+
+export const STAGE_LABELS: Record<string, string> = {
+  artist_review: "Artist Review",
+  base_preparation: "Base Preparation",
+  sketch: "Sketch",
+  painting: "Painting",
+  detail_work: "Detail Work",
+  quality_control: "Quality Control",
+  packed: "Packed",
+  shipped: "Shipped",
+  delivered: "Delivered",
+};
+
+/**
+ * Completion lifecycle — one authoritative rule:
+ *
+ * `Commission.status` becomes `"completed"` if and only if the production
+ * stage reaches `"delivered"` (via advanceStage() below). That is the single
+ * source of truth for "is this commission done."
+ *
+ * `Shipment.deliveredAt` (set via setShipment({ markDelivered: true })) used
+ * to be an independent signal that never touched Commission.status at all —
+ * an admin could mark a shipment delivered while the commission still showed
+ * an earlier status. It no longer is: marking a shipment delivered now drives
+ * the same advanceStage("delivered") transition, so there is exactly one
+ * event that means "done," not two unreconciled ones.
+ *
+ * Art Passport publication is a separate, later, optional certification step
+ * — it requires status to already be "completed" (i.e. delivered) and does
+ * not itself define completion.
+ */
 
 export async function listCommissionsForAdmin() {
   return db.commission.findMany({
@@ -65,9 +102,20 @@ export async function assignArtist(commissionId: string, artistId: string) {
   });
 }
 
+/**
+ * The single stage that may legally come next, as a 0- or 1-element array
+ * (empty once "delivered" has been reached). Returning the whole remaining
+ * tail of STAGE_ORDER here would let advanceStage() accept ANY future stage
+ * as "valid," i.e. let a caller skip straight from "artist_review" to
+ * "delivered" in one request — which defeats both the ordering guarantee
+ * this function exists to provide and the "can't mark delivered before
+ * shipped" rule in setShipment() below, which relies on this rejecting
+ * anything that isn't the immediate next stage.
+ */
 export function nextStageOptions(reachedStages: string[]): string[] {
   const lastIndex = STAGE_ORDER.reduce((acc, s, i) => (reachedStages.includes(s) ? i : acc), -1);
-  return STAGE_ORDER.slice(lastIndex + 1);
+  const next = STAGE_ORDER[lastIndex + 1];
+  return next ? [next] : [];
 }
 
 export async function advanceStage(commissionId: string, stage: string, notes?: string) {
@@ -102,6 +150,7 @@ export async function addProductionUpdate(
   message: string,
   photoUrl?: string,
 ) {
+  if (!STAGE_ORDER.includes(stage)) throw new ApiError(400, "Unknown production stage");
   return db.productionUpdate.create({
     data: { commissionId, stage, message, photoUrl },
   });
@@ -123,7 +172,7 @@ export async function setShipment(
   const order = await db.order.findUnique({ where: { commissionId } });
   if (!order) throw new ApiError(404, "No order found for this commission");
 
-  return db.shipment.upsert({
+  const shipment = await db.shipment.upsert({
     where: { orderId: order.id },
     create: {
       orderId: order.id,
@@ -139,6 +188,34 @@ export async function setShipment(
       ...(data.markDelivered ? { deliveredAt: new Date() } : {}),
     },
   });
+
+  // Single source of truth for completion (see the lifecycle comment above):
+  // marking a shipment delivered drives the same "delivered" production
+  // stage transition, rather than being a second, unreconciled signal. If
+  // the stage has already been reached some other way (e.g. via the stage
+  // panel directly), this is a no-op. If production genuinely hasn't reached
+  // "shipped" yet, advanceStage throws — surfaced to the admin as a real
+  // error rather than silently marking something "delivered" out of order.
+  if (data.markDelivered) {
+    const reached = (
+      await db.productionStage.findMany({ where: { commissionId }, select: { stage: true } })
+    ).map((s) => s.stage);
+    if (!reached.includes("delivered")) {
+      try {
+        await advanceStage(commissionId, "delivered");
+      } catch (err) {
+        if (err instanceof ApiError) {
+          throw new ApiError(
+            409,
+            "Cannot mark this shipment delivered until production has reached the \"Shipped\" stage.",
+          );
+        }
+        throw err;
+      }
+    }
+  }
+
+  return shipment;
 }
 
 function slugify(input: string): string {
@@ -154,10 +231,28 @@ export async function publishArtPassport(
 ) {
   const commission = await db.commission.findUnique({
     where: { id: commissionId },
-    include: { artwork: { include: { approvedVersion: { include: { creativeDirection: true } } } } },
+    include: {
+      artwork: {
+        include: { approvedVersion: { include: { creativeDirection: true } }, passport: true },
+      },
+    },
   });
   if (!commission || !commission.artwork) {
     throw new ApiError(400, "This commission has no approved artwork yet");
+  }
+  // Completion (status === "completed") is defined solely by reaching the
+  // "delivered" production stage (see the lifecycle comment above). The
+  // passport is a certification of an already-completed piece, not the
+  // event that completes it — publishing one for a piece that hasn't
+  // actually been delivered would misrepresent its provenance.
+  if (commission.status !== "completed") {
+    throw new ApiError(
+      400,
+      "This commission must reach \"Delivered\" before its Art Passport can be published.",
+    );
+  }
+  if (commission.artwork.passport) {
+    throw new ApiError(409, "This commission already has a published Art Passport.");
   }
 
   const year = new Date().getFullYear();
@@ -190,7 +285,10 @@ export async function publishArtPassport(
     },
   });
 
-  await db.commission.update({ where: { id: commissionId }, data: { status: "completed" } });
+  // Not setting Commission.status here: the precondition above already
+  // guarantees it's "completed" (set when production reached "delivered").
+  // Publishing a passport certifies an already-completed piece; it doesn't
+  // define completion itself. See the lifecycle comment above.
 
   return passport;
 }
