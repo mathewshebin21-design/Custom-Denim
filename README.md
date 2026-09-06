@@ -68,6 +68,7 @@ All in `.env` (see `.env.example` for the annotated template):
 | `ANTHROPIC_API_KEY` | no | Powers the real AI Creative Director / Design Interpreter / Feasibility Assistant. **Without it, the Studio runs in a clearly-labeled offline fallback mode** — deterministic, hand-written creative directions so the whole flow (including versioning, revisions, approval) still works for demos and testing without a key |
 | `ANTHROPIC_MODEL` | no | Overrides the Claude model ID (defaults to `claude-sonnet-5`) |
 | `APP_BASE_URL` | yes | Used to build the Art Passport's QR-code URL |
+| `APP_ENV` | yes | `development`, `staging`, or `production`. `prisma/seed.ts` refuses to run unless this is `development` or `staging` — see below |
 
 ### Running the AI for real
 

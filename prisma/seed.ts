@@ -1,8 +1,56 @@
+import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
 import { generateConceptImage } from "../src/lib/ai/visualConceptGenerator";
+
+/**
+ * Production safety guard. This script inserts demo data — a demo admin
+ * account, demo artists, and a sample commission — all with a known,
+ * shared password. It must never be able to run against a production
+ * database.
+ *
+ * `APP_ENV` is the intended long-term environment discriminator (see the
+ * C0 architecture plan's central env-config item, not yet implemented).
+ * Until that lands, this guard reads `process.env.APP_ENV` directly. It
+ * fails closed: only an explicit, recognized "development" or "staging"
+ * value allows the seed to run. A missing or unrecognized value is
+ * refused exactly like "production" — this is deliberate, not an
+ * oversight, so a misconfigured deployment can never fall through to
+ * "allowed" by default.
+ */
+const SEED_ALLOWED_ENVIRONMENTS = new Set(["development", "staging"]);
+
+function assertSeedAllowed(): void {
+  const appEnv = process.env.APP_ENV;
+
+  if (appEnv === "production") {
+    console.error(
+      "Refusing to seed: APP_ENV=production. This script inserts demo data " +
+        "(a demo admin, demo artists, and a sample commission, all with a " +
+        "known password) and must never run against a production database.",
+    );
+    process.exit(1);
+  }
+
+  if (!appEnv || !SEED_ALLOWED_ENVIRONMENTS.has(appEnv)) {
+    console.error(
+      appEnv
+        ? `Refusing to seed: APP_ENV is set to an unrecognized value ("${appEnv}").`
+        : "Refusing to seed: APP_ENV is not set.",
+    );
+    console.error(
+      'Set APP_ENV to "development" or "staging" to run this seed. ' +
+        "This guard fails closed: an unset or unrecognized APP_ENV is " +
+        "refused exactly like production, so it can never be run by " +
+        "accident in an environment that forgot to configure it.",
+    );
+    process.exit(1);
+  }
+}
+
+assertSeedAllowed();
 
 const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL ?? "file:./prisma/dev.db" });
 const db = new PrismaClient({ adapter });
