@@ -15,9 +15,8 @@ Art Passport with QR verification.
 ## Stack
 
 - **Next.js 16** (App Router, Turbopack) + TypeScript + Tailwind CSS v4
-- **Prisma 7** ORM on **SQLite** (via the `@prisma/adapter-libsql` driver
-  adapter) for zero-config local dev — swap to Postgres for production (see
-  [Going to production](#going-to-production))
+- **Prisma 7** ORM on **PostgreSQL** (via the `@prisma/adapter-pg` driver
+  adapter) for every environment — see [Database](#database) for local setup
 - **Hand-rolled session auth** (bcrypt + signed JWT cookies via `jose`) —
   chosen over NextAuth to avoid an unstable dependency on a framework this
   new; see [Why not NextAuth](#why-not-nextauth)
@@ -30,9 +29,12 @@ Art Passport with QR verification.
 
 ## Getting started
 
+Requires a local PostgreSQL database — see [Database](#database) for the
+two supported ways to get one running (native or Docker).
+
 ```bash
 npm install
-cp .env.example .env   # defaults work as-is for local dev (SQLite, no AI key needed)
+cp .env.example .env   # then edit DATABASE_URL to point at your local Postgres
 npx prisma migrate deploy
 npx prisma db seed
 npm run dev
@@ -63,7 +65,7 @@ All in `.env` (see `.env.example` for the annotated template):
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `DATABASE_URL` | yes | SQLite file path in dev (`file:./prisma/dev.db`); Postgres connection string in production |
+| `DATABASE_URL` | yes | PostgreSQL connection string (`postgresql://user:password@host:port/db?schema=public`) — one per environment, never shared between dev/staging/production |
 | `AUTH_SECRET` | yes | Signs session JWTs. Generate with `openssl rand -base64 32` |
 | `ANTHROPIC_API_KEY` | no | Powers the real AI Creative Director / Design Interpreter / Feasibility Assistant. **Without it, the Studio runs in a clearly-labeled offline fallback mode** — deterministic, hand-written creative directions so the whole flow (including versioning, revisions, approval) still works for demos and testing without a key |
 | `ANTHROPIC_MODEL` | no | Overrides the Claude model ID (defaults to `claude-sonnet-5`) |
@@ -88,11 +90,16 @@ overwrites) / `ReferenceImage` / `Artist` / `ArtistAssignment` /
 `ProductionStage` / `ProductionUpdate` / `Artwork` / `ArtPassport` / `Order`
 / `Payment` / `Shipment` / `Review`.
 
-SQLite doesn't support native enums or array columns, so status-like fields
-are plain `String` (documented as unions in code comments) and array-like
-fields (`themes`, `colorPalette`, style tags, etc.) are stored as JSON
-strings and parsed at the application boundary. This keeps the schema
-portable to Postgres without a rewrite.
+Status-like fields are plain `String` (documented as unions in code
+comments), not database-level enums — the canonical value sets are enforced
+at the application boundary (e.g. `STAGE_ORDER` in `src/lib/admin/service.ts`)
+so they stay easy to extend without a migration. Array-like fields
+(`themes`, `colorPalette`, style tags, etc.) are stored as JSON strings and
+parsed at the application boundary rather than using Postgres's native
+`jsonb` type — this was a deliberate choice carried over from the project's
+original SQLite-first design and preserved as-is during the C1 PostgreSQL
+migration (changing it would be a schema/semantics change, not a database
+swap).
 
 ### AI services (`src/lib/ai/`)
 
@@ -170,18 +177,95 @@ portal (admin currently manages artist-side updates on their behalf),
 referrals, personalization, and deeper analytics beyond the admin
 overview's basic metrics.
 
+## Database
+
+The app runs on **PostgreSQL** in every environment (dev/staging/production)
+via the `@prisma/adapter-pg` driver adapter (`src/lib/db.ts`,
+`prisma/seed.ts`). Nothing is SQLite-specific anymore — a prior version of
+this project used SQLite for zero-config local dev; that migration is
+complete (C1) and its old migration history is preserved for reference in
+`prisma/migrations-archive/sqlite/` (not applied to any database).
+
+### Local development — two supported options
+
+**Option A — native PostgreSQL (recommended, lighter weight):**
+
+```bash
+# macOS
+brew install postgresql@16
+brew services start postgresql@16
+createuser -s customdenim
+createdb -O customdenim customdenim_dev
+psql -c "ALTER USER customdenim WITH PASSWORD 'pick-a-local-password'"
+```
+
+Then set `DATABASE_URL` in `.env` to
+`postgresql://customdenim:pick-a-local-password@localhost:5432/customdenim_dev?schema=public`.
+
+This is the recommended default: no container runtime, minimal memory
+overhead (relevant on an 8GB dev machine), and Postgres itself is what's
+running in every other environment too.
+
+**Option B — Docker Compose (if you prefer not to install Postgres
+natively, or want easy teardown/reset):**
+
+```bash
+docker compose up -d db
+```
+
+See `docker-compose.yml` at the repo root — it starts a single `postgres:16`
+container on `localhost:5432` with a persisted volume. Docker is **not**
+required; use whichever option fits your machine.
+
+### Migration history
+
+`prisma/migrations/` holds the PostgreSQL migration history, starting from
+`20260906173000_init_postgresql` — a clean baseline generated directly from
+`prisma/schema.prisma` (via `prisma migrate diff --from-empty`), not a
+port of the old SQLite SQL. Apply it with:
+
+```bash
+npx prisma migrate deploy
+```
+
+`npx prisma migrate dev` for creating new migrations locally, exactly as
+before — this didn't change with the provider swap.
+
+### Staging vs. production
+
+Each environment gets its own PostgreSQL database and its own
+`DATABASE_URL` — never share one connection string across environments.
+Set `APP_ENV` to match (`staging` / `production`); `prisma/seed.ts` reads
+it and refuses to run at all in `production` (see
+[Environment variables](#environment-variables)).
+
+### Data transfer from an existing SQLite database
+
+If you have an existing `prisma/dev.db` (or any other SQLite database) you
+want to carry data over from, see `scripts/transfer-sqlite-to-postgres.ts`.
+It walks every model in foreign-key-safe order, upserts by primary key (so
+re-running it is safe), and reports before/after counts per table. It also
+prints a warning for any `User` row whose email doesn't match the seed
+script's known accounts — **read that warning before trusting the
+transferred data represents real customers**; the script does not delete,
+guess, or silently promote ambiguous rows.
+
+```bash
+SOURCE_SQLITE_URL="file:./prisma/dev.db" npx tsx scripts/transfer-sqlite-to-postgres.ts
+```
+
+Run it against the target environment's `DATABASE_URL` (set normally in
+`.env`/deployment config) — the source is passed separately via
+`SOURCE_SQLITE_URL` so the two are never confused.
+
 ## Going to production
 
-1. **Database:** change `datasource.provider` in `prisma/schema.prisma` to
-   `postgresql`, set `DATABASE_URL` to a Postgres connection string, and
-   swap `PrismaLibSql` for `PrismaPg` (`@prisma/adapter-pg`) in
-   `src/lib/db.ts` and `prisma/seed.ts`.
-2. **File storage:** replace `src/app/api/uploads/route.ts`'s local
+1. **File storage:** replace `src/app/api/uploads/route.ts`'s local
    `fs.writeFile` with an S3-compatible upload; callers only depend on the
    `{ url }` response shape.
-3. **Payments:** integrate Stripe (or similar) behind the existing `Order`
+2. **Payments:** integrate Stripe (or similar) behind the existing `Order`
    / `Payment` models; the admin "mark paid" flow becomes a webhook
    handler instead of a manual button.
-4. **Image generation:** swap `visualConceptGenerator.ts`'s implementation
+3. **Image generation:** swap `visualConceptGenerator.ts`'s implementation
    for a real image model call; keep the function signature.
-5. Rotate `AUTH_SECRET` and every seeded password.
+4. Rotate `AUTH_SECRET` and every seeded password.

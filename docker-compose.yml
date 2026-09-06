@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: customdenim
+      POSTGRES_PASSWORD: customdenim_dev_password
+      POSTGRES_DB: customdenim_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - customdenim-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  customdenim-postgres-data:

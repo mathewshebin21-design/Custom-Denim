@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
 import { generateConceptImage } from "../src/lib/ai/visualConceptGenerator";
@@ -52,7 +52,12 @@ function assertSeedAllowed(): void {
 
 assertSeedAllowed();
 
-const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL ?? "file:./prisma/dev.db" });
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error("Refusing to seed: DATABASE_URL is not set.");
+  process.exit(1);
+}
+const adapter = new PrismaPg({ connectionString });
 const db = new PrismaClient({ adapter });
 
 async function hash(pw: string) {

@@ -1,8 +1,8 @@
 // Wearable-art platform data model.
-// SQLite is used for zero-config local/dev runs. To move to production,
-// switch `datasource.provider` to "postgresql", set DATABASE_URL to a
-// Postgres connection string, and swap the driver adapter in src/lib/db.ts
-// from @prisma/adapter-libsql to @prisma/adapter-pg (see README).
+// PostgreSQL is the datasource for every environment (dev/staging/prod) —
+// see README.md "Database" for local setup. Connection details live in
+// DATABASE_URL only (see prisma.config.ts); nothing here is provider-specific
+// beyond the `provider` line itself.
 
 generator client {
   provider = "prisma-client"
@@ -10,7 +10,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // ---------------------------------------------------------------------------
@@ -220,11 +220,12 @@ model ArtistAssignment {
 
 // stage: "artist_review" | "base_preparation" | "sketch" | "painting" |
 //        "detail_work" | "quality_control" | "packed" | "shipped" | "delivered"
-// SQLite has no native enum/CHECK-on-existing-table support without a full
-// table rebuild, so this stays a plain String; the canonical value set is
-// enforced at the application boundary (STAGE_ORDER in
+// Deliberately a plain String, not a DB-level enum: the canonical value set
+// is enforced at the application boundary (STAGE_ORDER in
 // src/lib/admin/service.ts), not the database, for both this model and
-// ProductionUpdate.stage below.
+// ProductionUpdate.stage below. Adding a Postgres native enum later would be
+// a real option, but it's not required for correctness and isn't part of
+// this migration's scope.
 model ProductionStage {
   id           String     @id @default(cuid())
   commissionId String
