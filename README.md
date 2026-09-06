@@ -28,6 +28,9 @@ Art Passport with QR verification.
   production photos, behind a provider-agnostic `StorageService` — local
   disk in dev, any S3-compatible bucket in production — see
   [Object storage](#object-storage)
+- **Payments** (`src/lib/payments/`) via Stripe Checkout Sessions, behind a
+  provider-agnostic `PaymentService` — the webhook, not the browser, is the
+  only thing that can mark an order paid — see [Payments](#payments)
 
 ## Getting started
 
@@ -71,10 +74,12 @@ All in `.env` (see `.env.example` for the annotated template):
 | `AUTH_SECRET` | yes | Signs session JWTs. Generate with `openssl rand -base64 32` |
 | `ANTHROPIC_API_KEY` | no | Powers the real AI Creative Director / Design Interpreter / Feasibility Assistant. **Without it, the Studio runs in a clearly-labeled offline fallback mode** — deterministic, hand-written creative directions so the whole flow (including versioning, revisions, approval) still works for demos and testing without a key |
 | `ANTHROPIC_MODEL` | no | Overrides the Claude model ID (defaults to `claude-sonnet-5`) |
-| `APP_BASE_URL` | yes | Used to build the Art Passport's QR-code URL |
+| `APP_BASE_URL` | yes | Used to build the Art Passport's QR-code URL and the Stripe Checkout success/cancel redirect URLs |
 | `APP_ENV` | yes | `development`, `staging`, or `production`. `prisma/seed.ts` refuses to run unless this is `development` or `staging` — see below |
 | `STORAGE_PROVIDER` | yes | `local` or `s3` — see [Object storage](#object-storage). Independent of `APP_ENV`; never inferred from it |
 | `S3_*` | only if `STORAGE_PROVIDER=s3` | Region/endpoint/credentials/bucket names — see `.env.example` and [Object storage](#object-storage) |
+| `PAYMENT_PROVIDER` | yes | Currently only `stripe` — see [Payments](#payments). Independent of `APP_ENV`; never inferred from it |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | yes | Stripe test-mode keys for dev/staging, separate production keys — see `.env.example` and [Payments](#payments) |
 
 ### Running the AI for real
 
@@ -333,11 +338,95 @@ is reported as **unowned** and left untouched; a human must resolve those.
 STORAGE_PROVIDER=s3 ... npx tsx scripts/migrate-local-uploads-to-storage.ts
 ```
 
+## Payments
+
+Approving a concept (`approveVersion` in `src/lib/studio/service.ts`) locks
+a server-computed price into an `Order`/`Payment` row — it does **not**
+start production. Production only begins once payment is independently
+verified:
+
+```
+Concept Approved → Price Locked (Order created)
+  → Customer clicks "Proceed to Payment" → Stripe Checkout Session
+  → Stripe redirects the customer back (informational only — proves nothing)
+  → Stripe webhook (signature-verified) → amount/currency reconciled
+  → Order.status = "paid" → first ProductionStage created
+```
+
+### The payment → production gate
+
+`advanceStage()` in `src/lib/admin/service.ts` is the **only** place a
+`ProductionStage` row is ever created, including the first one
+(`artist_review`) — and it refuses unless `Order.status === "paid"`. This
+holds for every caller: the ordinary admin "advance stage" action, the
+delivery cascade, and a direct, forged API call alike. The browser can
+never mark an order paid — there is no client-settable "paid" flag
+anywhere; query parameters, redirect URLs, and POST bodies from the
+customer-facing checkout flow are never trusted for payment state.
+
+### PaymentService (`src/lib/payments/`)
+
+Mirrors `src/lib/storage/`'s architecture: a small provider-agnostic
+interface (`createCheckout`, `verifyWebhook`, `retrieveCheckoutSession`),
+one factory (`getPaymentService()`) that reads `PAYMENT_PROVIDER`, and a
+Stripe implementation behind it. No provider-name branching exists outside
+`src/lib/payments/`.
+
+### Webhook verification and idempotency
+
+`POST /api/webhooks/stripe` reads the raw request body, verifies the
+`Stripe-Signature` header against `STRIPE_WEBHOOK_SECRET`, and rejects
+anything that doesn't verify — a redirect to the success page proves
+nothing on its own and is never treated as payment confirmation. The
+webhook body's `amount_total`/`currency` (already authoritative once
+signature-verified) are reconciled against the order's locked
+`priceCents`/`currency`; an independent re-fetch from Stripe's API is
+attempted as a best-effort second check but never blocks confirmation on
+its own success (a transient network failure on that secondary call should
+not undo a payment the signed webhook already proved happened).
+
+Each event's unique id is recorded in a `WebhookEvent` table with a
+`(provider, eventId)` unique constraint — a genuine database-backed
+idempotency guarantee, not an in-memory flag, so duplicate or concurrently
+retried deliveries can never double-apply a payment.
+
+### Manual reconciliation (admin-only, documented exception)
+
+The pre-existing admin "Mark Paid" action (`setPaymentStatus` /
+`PaymentPanel`) still exists, for cases the webhook can't cover on its own
+(a payment taken out-of-band, a lost webhook delivery) — it is admin-only,
+separate from the customer checkout flow, and routes through the exact same
+`markPaymentSucceeded()` transition the webhook uses, so it can never
+desync `Payment`/`Order`/production start. It is not a generic bypass.
+
+### Local testing without live Stripe access
+
+`scripts/dev-fixtures/simulate-stripe-webhook.ts` signs a synthetic event
+using Stripe's own documented HMAC scheme against your local
+`STRIPE_WEBHOOK_SECRET` and POSTs it to a running app — this exercises
+signature verification, idempotency, and reconciliation without needing
+network access to Stripe. It does not exercise checkout creation itself
+(that requires live API access) — see its own header comment for usage.
+
+### Environment variables
+
+`PAYMENT_PROVIDER`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` — see
+`.env.example`. Use Stripe's test-mode keys for dev/staging; use separate
+production keys, never derived from `APP_ENV`. Get test keys from the
+Stripe Dashboard (test mode) and, for local webhook testing against a real
+Stripe test account, use the Stripe CLI (`stripe listen --forward-to
+localhost:3000/api/webhooks/stripe`) to obtain a matching webhook secret.
+
+### What's not implemented
+
+Refunds/cancellations are not built — `Payment.status` includes `"refunded"`
+as a documented value the admin can set, but no refund is actually issued
+through Stripe. The abstraction (`PaymentService`) is deliberately narrow
+enough that adding a real `refund()` method later doesn't require
+restructuring anything.
+
 ## Going to production
 
-1. **Payments:** integrate Stripe (or similar) behind the existing `Order`
-   / `Payment` models; the admin "mark paid" flow becomes a webhook
-   handler instead of a manual button.
-2. **Image generation:** swap `visualConceptGenerator.ts`'s implementation
+1. **Image generation:** swap `visualConceptGenerator.ts`'s implementation
    for a real image model call; keep the function signature.
-3. Rotate `AUTH_SECRET` and every seeded password.
+2. Rotate `AUTH_SECRET` and every seeded password.

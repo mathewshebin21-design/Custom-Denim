@@ -6,6 +6,7 @@ import { generateCreativeDirections } from "@/lib/ai/creativeDirector";
 import { interpretDesign } from "@/lib/ai/designInterpreter";
 import { assessFeasibility } from "@/lib/ai/feasibilityAssistant";
 import { generateConceptImage } from "@/lib/ai/visualConceptGenerator";
+import { getPaymentService } from "@/lib/payments";
 import type { CreativeDirectionOutput, DesignSpec, StudioIntake } from "@/types/studio";
 
 export type CommissionIntakeInput = {
@@ -313,6 +314,14 @@ export async function approveVersion(
 
   await db.conceptVersion.update({ where: { id: version.id }, data: { status: "approved" } });
 
+  // The price computed here is persisted once and never recomputed —
+  // Order.priceCents is the server-side price lock a checkout session is
+  // later created against (src/lib/payments/), and it does not change
+  // after this point. Production itself does not start yet: creating the
+  // first ProductionStage now happens only once payment is verified (see
+  // advanceStage()'s payment gate and markPaymentSucceeded() in
+  // src/lib/admin/service.ts) — approval creates a payable order, it does
+  // not authorize production.
   const priceCents = computeCommissionPriceCents(commission);
 
   const artwork = await db.$transaction(async (tx) => {
@@ -320,7 +329,6 @@ export async function approveVersion(
     const created = await tx.artwork.create({
       data: { commissionId, approvedVersionId: version.id },
     });
-    await tx.productionStage.create({ data: { commissionId, stage: "artist_review" } });
     const order = await tx.order.create({ data: { commissionId, priceCents } });
     await tx.payment.create({
       data: { orderId: order.id, amountCents: priceCents, status: "pending" },
@@ -329,4 +337,55 @@ export async function approveVersion(
   });
 
   return artwork;
+}
+
+/**
+ * Creates a provider checkout session for an approved commission's locked
+ * order. Deliberately customer-only (no admin bypass, unlike
+ * loadCommissionOrThrow's other callers) — an admin triggering someone
+ * else's payment session is not a legitimate action this app supports.
+ *
+ * The amount/currency handed to the payment provider always comes from the
+ * already-persisted Order row (see approveVersion's price lock above) —
+ * nothing here accepts a price from the caller.
+ */
+export async function createCheckoutForCommission(
+  commissionId: string,
+  customerId: string,
+  appBaseUrl: string,
+) {
+  const commission = await db.commission.findUnique({
+    where: { id: commissionId },
+    include: { customer: true, garment: true, order: { include: { payment: true } }, productionStages: true },
+  });
+  if (!commission) throw new ApiError(404, "Commission not found");
+  if (commission.customerId !== customerId) throw new ApiError(403, "Not your commission");
+
+  const order = commission.order;
+  if (!order || !order.payment) {
+    throw new ApiError(400, "This commission does not have a payable order yet.");
+  }
+  if (order.status === "paid" || order.payment.status === "succeeded") {
+    throw new ApiError(409, "This order has already been paid.");
+  }
+  if (commission.productionStages.length > 0) {
+    throw new ApiError(409, "This commission is already in production.");
+  }
+
+  const result = await getPaymentService().createCheckout({
+    orderId: order.id,
+    amountCents: order.priceCents,
+    currency: order.currency,
+    description: `Custom Denim — ${commission.garment.label}`,
+    customerEmail: commission.customer.email,
+    successUrl: `${appBaseUrl}/account/commissions/${commissionId}?checkout=success`,
+    cancelUrl: `${appBaseUrl}/account/commissions/${commissionId}?checkout=cancelled`,
+  });
+
+  await db.payment.update({
+    where: { id: order.payment.id },
+    data: { status: "checkout_created", provider: "stripe", providerSessionId: result.providerSessionId },
+  });
+
+  return result;
 }

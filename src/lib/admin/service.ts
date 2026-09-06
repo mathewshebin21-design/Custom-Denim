@@ -2,7 +2,14 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/auth/guards";
+
+/** Accepts either the top-level client or a transaction client, so
+ * `advanceStage` can be called standalone (existing admin routes) or
+ * composed atomically inside a larger transaction (the payment webhook —
+ * see markPaymentSucceeded below). */
+type Db = typeof db | Prisma.TransactionClient;
 
 // The canonical, ordered set of production stages. SQLite has no native
 // enum/CHECK-on-existing-table support without a full table rebuild (see
@@ -118,28 +125,43 @@ export function nextStageOptions(reachedStages: string[]): string[] {
   return next ? [next] : [];
 }
 
-export async function advanceStage(commissionId: string, stage: string, notes?: string) {
+/**
+ * The payment -> production gate. This is the ONLY place a ProductionStage
+ * row is ever created — including the very first one ("artist_review") —
+ * so it is the single, unavoidable enforcement point regardless of caller:
+ * the ordinary admin "advance stage" route, the delivery cascade in
+ * setShipment() below, and markPaymentSucceeded()'s own call to kick off
+ * production all funnel through here. A commission whose Order has not
+ * reached "paid" can never acquire a ProductionStage no matter which of
+ * those paths is used, including a forged direct API call.
+ */
+export async function advanceStage(commissionId: string, stage: string, notes?: string, client: Db = db) {
   if (!STAGE_ORDER.includes(stage)) throw new ApiError(400, "Unknown production stage");
 
+  const order = await client.order.findUnique({ where: { commissionId }, select: { status: true } });
+  if (!order || order.status !== "paid") {
+    throw new ApiError(402, "Payment must be verified before production can begin.");
+  }
+
   const reached = (
-    await db.productionStage.findMany({ where: { commissionId }, select: { stage: true } })
+    await client.productionStage.findMany({ where: { commissionId }, select: { stage: true } })
   ).map((s) => s.stage);
   if (!nextStageOptions(reached).includes(stage)) {
     throw new ApiError(409, "This stage has already been reached or is out of sequence");
   }
 
-  const openStage = await db.productionStage.findFirst({
+  const openStage = await client.productionStage.findFirst({
     where: { commissionId, exitedAt: null },
     orderBy: { enteredAt: "desc" },
   });
   if (openStage) {
-    await db.productionStage.update({ where: { id: openStage.id }, data: { exitedAt: new Date() } });
+    await client.productionStage.update({ where: { id: openStage.id }, data: { exitedAt: new Date() } });
   }
 
-  const created = await db.productionStage.create({ data: { commissionId, stage, notes } });
+  const created = await client.productionStage.create({ data: { commissionId, stage, notes } });
 
   const commissionStatus = stage === "delivered" ? "completed" : "in_production";
-  await db.commission.update({ where: { id: commissionId }, data: { status: commissionStatus } });
+  await client.commission.update({ where: { id: commissionId }, data: { status: commissionStatus } });
 
   return created;
 }
@@ -156,12 +178,72 @@ export async function addProductionUpdate(
   });
 }
 
+/**
+ * The single path that transitions an order to "paid" — called by the
+ * Stripe webhook handler (src/app/api/webhooks/stripe/route.ts) after
+ * signature verification and amount/currency reconciliation, and by
+ * setPaymentStatus() below for the sanctioned admin manual-reconciliation
+ * case. Both callers share this function specifically so "what happens
+ * when payment succeeds" (mark paid, kick off production) is defined once,
+ * not duplicated.
+ *
+ * Runs as one transaction: Payment and Order flip to their paid state and
+ * the first ProductionStage is created atomically, so nothing can observe
+ * an order marked "paid" with production still ungated (or vice versa).
+ */
+export async function markPaymentSucceeded(
+  commissionId: string,
+  paymentId: string,
+  data: { provider: string; providerPaymentIntentId?: string | null },
+) {
+  return db.$transaction(async (tx) => {
+    await tx.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: "succeeded",
+        provider: data.provider,
+        providerPaymentIntentId: data.providerPaymentIntentId ?? undefined,
+        paidAt: new Date(),
+      },
+    });
+    await tx.order.update({ where: { commissionId }, data: { status: "paid" } });
+    // Idempotent: if production has already started (e.g. a duplicate
+    // webhook processed under a race, or an admin already reconciled this
+    // manually), the first stage already exists and nextStageOptions()
+    // inside advanceStage() will correctly reject re-creating it — caught
+    // and ignored here rather than surfaced as an error, since "payment
+    // succeeded and production already started" is not a failure.
+    try {
+      await advanceStage(commissionId, "artist_review", undefined, tx);
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 409)) throw err;
+    }
+  });
+}
+
+/**
+ * Admin manual payment reconciliation — the sanctioned exception to "only
+ * the webhook marks payment succeeded" (see markPaymentSucceeded above).
+ * This exists for cases the webhook cannot cover on its own (a payment
+ * taken through an out-of-band channel, a webhook delivery that was lost
+ * and never retried successfully) and is deliberately kept admin-only,
+ * separate from the customer checkout flow, and fully auditable through
+ * this codebase (it is not a generic "mark anything paid" bypass — it
+ * still goes through markPaymentSucceeded's same transactional state
+ * transition, so it can never desync Payment/Order/production start).
+ */
 export async function setPaymentStatus(commissionId: string, status: string) {
   const order = await db.order.findUnique({ where: { commissionId }, include: { payment: true } });
   if (!order || !order.payment) throw new ApiError(404, "No order/payment found for this commission");
+
+  if (status === "succeeded") {
+    await markPaymentSucceeded(commissionId, order.payment.id, { provider: "manual" });
+    return db.payment.findUniqueOrThrow({ where: { id: order.payment.id } });
+  }
+
   return db.payment.update({
     where: { id: order.payment.id },
-    data: { status, paidAt: status === "succeeded" ? new Date() : order.payment.paidAt },
+    data: { status, paidAt: order.payment.paidAt },
   });
 }
 

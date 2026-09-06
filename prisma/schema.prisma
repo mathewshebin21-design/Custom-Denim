@@ -289,6 +289,10 @@ model ArtPassport {
 // ---------------------------------------------------------------------------
 
 // status: "pending" | "paid" | "fulfilled" | "cancelled"
+// "paid" is the authoritative production gate (see advanceStage() in
+// src/lib/admin/service.ts) — set only by the Stripe webhook handler or the
+// admin manual-reconciliation path (src/lib/payments/), both of which write
+// it in the same transaction as Payment.status, so the two never drift.
 model Order {
   id           String     @id @default(cuid())
   commissionId String     @unique
@@ -304,19 +308,39 @@ model Order {
   updatedAt DateTime @updatedAt
 }
 
-// status: "pending" | "succeeded" | "failed" | "refunded"
-// MVP note: no live payment gateway is wired up; this is an admin-tracked
-// ledger entry until a real processor (e.g. Stripe) is integrated.
+// status: "pending" | "checkout_created" | "succeeded" | "failed" | "refunded"
+// C3: backed by Stripe Checkout Sessions (src/lib/payments/). "checkout_created"
+// means a session exists but has not yet been confirmed by webhook — never
+// treat it as paid. providerSessionId/providerPaymentIntentId are
+// Stripe-specific reconciliation identifiers; nothing outside
+// src/lib/payments/ should need to know they're Stripe-shaped.
 model Payment {
-  id          String    @id @default(cuid())
-  orderId     String    @unique
-  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  provider    String    @default("manual")
-  amountCents Int
-  status      String    @default("pending")
-  paidAt      DateTime?
+  id                       String    @id @default(cuid())
+  orderId                  String    @unique
+  order                    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider                 String    @default("manual")
+  amountCents              Int
+  status                   String    @default("pending")
+  providerSessionId        String?   @unique
+  providerPaymentIntentId  String?
+  paidAt                   DateTime?
 
   createdAt DateTime @default(now())
+}
+
+// Persistent webhook-delivery idempotency: the same provider event may be
+// delivered more than once (network retries, provider-side redelivery). A
+// unique constraint on (provider, eventId) — not an in-memory flag — is what
+// actually guarantees a duplicate delivery can never re-apply a payment
+// state transition. See src/app/api/webhooks/stripe/route.ts.
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String
+  type       String
+  receivedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
 }
 
 model Shipment {

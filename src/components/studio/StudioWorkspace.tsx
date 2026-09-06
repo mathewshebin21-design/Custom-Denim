@@ -221,10 +221,10 @@ export function StudioWorkspace({
             </p>
             <p className="font-display text-3xl">{formatPrice(priceCents)}</p>
             <p className="text-xs text-ink/50">
-              Approving creates an order for this piece and moves it into
-              production — this is not a payment yet, and this action cannot
-              be undone from here. Our team will follow up separately about
-              payment.
+              Approving locks this price and creates an order — this action
+              cannot be undone from here. You&apos;ll be asked to complete
+              payment next; production begins only once payment is
+              confirmed.
             </p>
             <div className="flex flex-wrap gap-4">
               <Button
@@ -268,10 +268,10 @@ export function StudioWorkspace({
         {isApproved && (
           <div className="border-t border-line pt-8">
             <p className="text-sm text-ink/70 mb-4">
-              This concept is approved and now moving through production.
+              This concept is approved. Complete payment to begin production.
             </p>
             <ButtonLink href={`/account/commissions/${commissionId}`}>
-              Track Production
+              Continue to Payment
             </ButtonLink>
           </div>
         )}

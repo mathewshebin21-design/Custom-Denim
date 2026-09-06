@@ -221,15 +221,19 @@ export function PaymentPanel({ commissionId, status }: { commissionId: string; s
 
   return (
     <div className="border border-line p-6">
-      <p className="label-eyebrow text-ink/50 mb-4">Payment — {status}</p>
+      <p className="label-eyebrow text-ink/50 mb-4">Payment — {status.replace(/_/g, " ")}</p>
       <p className="text-xs text-ink/50 mb-3">
-        No live payment gateway is connected in this environment; this marks
-        payment status manually.
+        Payment is normally confirmed automatically by the Stripe webhook
+        when the customer completes checkout. Use this only for manual
+        reconciliation (e.g. a payment taken outside the normal flow, or a
+        webhook that never arrived) — it goes through the exact same
+        paid-state transition the webhook uses, so production can begin
+        immediately afterward.
       </p>
       {error && <p className="text-sm text-rust mb-2">{error}</p>}
       <div className="flex gap-3">
         <Button variant="secondary" disabled={loading} onClick={() => setStatus("succeeded")}>
-          Mark Paid
+          Mark Paid (Manual Reconciliation)
         </Button>
         <Button variant="ghost" disabled={loading} onClick={() => setStatus("refunded")}>
           Mark Refunded
