@@ -24,8 +24,10 @@ Art Passport with QR verification.
   Director / Design Interpreter / Feasibility Assistant, called via forced
   tool-use for structured JSON output
 - **QR codes** (`qrcode`) for Art Passport verification links
-- Local-disk uploads for reference images and production photos (swap for
-  an S3-compatible bucket in production)
+- **Object storage** (`src/lib/storage/`) for reference images and
+  production photos, behind a provider-agnostic `StorageService` — local
+  disk in dev, any S3-compatible bucket in production — see
+  [Object storage](#object-storage)
 
 ## Getting started
 
@@ -71,6 +73,8 @@ All in `.env` (see `.env.example` for the annotated template):
 | `ANTHROPIC_MODEL` | no | Overrides the Claude model ID (defaults to `claude-sonnet-5`) |
 | `APP_BASE_URL` | yes | Used to build the Art Passport's QR-code URL |
 | `APP_ENV` | yes | `development`, `staging`, or `production`. `prisma/seed.ts` refuses to run unless this is `development` or `staging` — see below |
+| `STORAGE_PROVIDER` | yes | `local` or `s3` — see [Object storage](#object-storage). Independent of `APP_ENV`; never inferred from it |
+| `S3_*` | only if `STORAGE_PROVIDER=s3` | Region/endpoint/credentials/bucket names — see `.env.example` and [Object storage](#object-storage) |
 
 ### Running the AI for real
 
@@ -171,10 +175,9 @@ public passport page.
 **Deliberately not built** (per the brief's own guidance, and because they
 need real third-party credentials this environment doesn't have): a live
 payment gateway (Stripe et al. — `Payment` is currently an admin-tracked
-ledger row), real object storage for uploads (currently local disk),
-a paid image-generation model for concept art, a separate artist-facing
-portal (admin currently manages artist-side updates on their behalf),
-referrals, personalization, and deeper analytics beyond the admin
+ledger row), a paid image-generation model for concept art, a separate
+artist-facing portal (admin currently manages artist-side updates on their
+behalf), referrals, personalization, and deeper analytics beyond the admin
 overview's basic metrics.
 
 ## Database
@@ -258,14 +261,83 @@ Run it against the target environment's `DATABASE_URL` (set normally in
 `.env`/deployment config) — the source is passed separately via
 `SOURCE_SQLITE_URL` so the two are never confused.
 
+## Object storage
+
+Reference images (Studio intake) and production update photos (admin) are
+uploaded through `/api/uploads` and stored via `StorageService`
+(`src/lib/storage/`) — every caller depends only on that interface, never on
+a specific provider. Both asset kinds are **private** (see
+[Object visibility](#object-visibility) below); nothing the app currently
+displays publicly is stored this way — the AI concept image and Art
+Passport's QR code are both inline-generated data URIs, not uploaded files.
+
+### `STORAGE_PROVIDER=local` (dev default)
+
+Writes to `.local-storage/` (gitignored, **not** under `public/` — Next's
+static file serving would otherwise expose every object at a predictable
+URL regardless of visibility) and serves it through
+`/api/storage/local/[...key]`. Private objects get genuine short-lived
+HMAC-signed URLs (signed with `AUTH_SECRET`, no extra config needed) — an
+expired or tampered link is rejected with a 403, exactly like a real
+signed S3 URL would be. No bucket or credentials required for local dev.
+
+### `STORAGE_PROVIDER=s3` (staging/production)
+
+Uses the AWS SDK v3 (`@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`)
+against a configurable `S3_ENDPOINT`, so it works unmodified against real
+AWS S3 (leave `S3_ENDPOINT` unset) or any S3-compatible provider —
+Cloudflare R2, MinIO, DigitalOcean Spaces, Backblaze B2 — by setting
+`S3_ENDPOINT` (and `S3_FORCE_PATH_STYLE` where that provider's docs call
+for it). See `.env.example` for the full variable list. Two separate
+buckets (`S3_PUBLIC_BUCKET` / `S3_PRIVATE_BUCKET`), not per-object ACLs —
+several S3-compatible providers don't support fine-grained ACLs, but all of
+them support "this bucket is public, that one isn't."
+
+### Object visibility
+
+| Category | Examples | Access |
+|---|---|---|
+| Private | Customer reference images, admin production photos | Short-lived signed URL, regenerated at render time — never persisted |
+| Public | *(none in use yet)* Future Art Passport photos, Blender-authored GLB assets | Stable URL via `S3_PUBLIC_BASE_URL`, long browser cache |
+
+### Object keys
+
+Namespaced by owner, never by customer text: `private/customers/{userId}/references/{assetId}.ext`
+(pre- or post-commission Studio uploads) and
+`private/commissions/{commissionId}/production/{assetId}.ext` (admin
+production photos) — see `src/lib/storage/objectKeys.ts`, which also
+documents the reserved key conventions for future Art Passport/Blender/R3F
+assets so those phases don't need a new storage architecture.
+
+### Database representation
+
+`ReferenceImage.url` / `ProductionUpdate.photoUrl` store the storage
+**key**, not a URL — a signed URL expires, so persisting one would produce
+a broken link later. `src/lib/storage/resolveAssetUrl()` turns a stored key
+into a fresh, render-time URL wherever these fields are displayed
+(`/account/commissions/[id]`, `/admin/commissions/[id]`). No schema change
+was needed for this — same `String` columns, different content.
+
+### Migrating existing local uploads
+
+If you have files under `public/uploads/` from before object storage was
+introduced, see `scripts/migrate-local-uploads-to-storage.ts`. It walks
+every `ReferenceImage`/`ProductionUpdate` row that still points at
+`/uploads/...`, re-validates the source file (same magic-byte check as the
+upload route), uploads it, verifies the result by checksum, and only then
+updates the row — safe to re-run (already-migrated rows are skipped), and
+it never deletes source files. Any local file with no owning database row
+is reported as **unowned** and left untouched; a human must resolve those.
+
+```bash
+STORAGE_PROVIDER=s3 ... npx tsx scripts/migrate-local-uploads-to-storage.ts
+```
+
 ## Going to production
 
-1. **File storage:** replace `src/app/api/uploads/route.ts`'s local
-   `fs.writeFile` with an S3-compatible upload; callers only depend on the
-   `{ url }` response shape.
-2. **Payments:** integrate Stripe (or similar) behind the existing `Order`
+1. **Payments:** integrate Stripe (or similar) behind the existing `Order`
    / `Payment` models; the admin "mark paid" flow becomes a webhook
    handler instead of a manual button.
-3. **Image generation:** swap `visualConceptGenerator.ts`'s implementation
+2. **Image generation:** swap `visualConceptGenerator.ts`'s implementation
    for a real image model call; keep the function signature.
-4. Rotate `AUTH_SECRET` and every seeded password.
+3. Rotate `AUTH_SECRET` and every seeded password.

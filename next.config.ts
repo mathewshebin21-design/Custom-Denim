@@ -25,6 +25,29 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 const scriptSrc = isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
+// C2: when object storage is backed by S3 (STORAGE_PROVIDER=s3), reference
+// images and production photos are served from the public bucket's base
+// URL and/or the S3 endpoint (private signed URLs point at the endpoint
+// directly) — both origins, and only those, are added to img-src. Local
+// dev (STORAGE_PROVIDER=local) serves everything same-origin through
+// /api/storage/local/..., so 'self' already covers it with no CSP change.
+function storageImageOrigins(): string[] {
+  if (process.env.STORAGE_PROVIDER !== "s3") return [];
+  const origins = new Set<string>();
+  for (const raw of [process.env.S3_PUBLIC_BASE_URL, process.env.S3_ENDPOINT]) {
+    if (!raw) continue;
+    try {
+      origins.add(new URL(raw).origin);
+    } catch {
+      // Malformed value — skip rather than let a bad env var widen img-src
+      // to something unparseable/unintended.
+    }
+  }
+  return [...origins];
+}
+
+const imgSrc = ["img-src", "'self'", "data:", ...storageImageOrigins()].join(" ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -35,7 +58,7 @@ const securityHeaders = [
       "default-src 'self'",
       scriptSrc,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
+      imgSrc,
       "font-src 'self'",
       "connect-src 'self'",
       "object-src 'none'",

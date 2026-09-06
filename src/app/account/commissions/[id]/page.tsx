@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ApiError } from "@/lib/auth/guards";
 import { requireSession } from "@/lib/auth/guards";
 import { getCommissionDetail } from "@/lib/studio/service";
+import { resolveAssetUrl } from "@/lib/storage";
 import { ProductionTimeline } from "@/components/account/ProductionTimeline";
 import { ReviewForm } from "@/components/account/ReviewForm";
 import { formatDate, formatPrice } from "@/lib/format";
@@ -27,6 +28,13 @@ export default async function CommissionDetailPage(props: PageProps<"/account/co
   const currentVersion = concept?.versions.find((v) => v.id === concept.currentVersionId);
   const reachedStages = commission.productionStages.map((s) => s.stage);
 
+  // Resolved server-side at render time (never persisted) — these are
+  // private, short-lived signed URLs, not the stable value stored on each
+  // ProductionUpdate row.
+  const updatePhotoUrls = await Promise.all(
+    commission.productionUpdates.map((u) => resolveAssetUrl(u.photoUrl)),
+  );
+
   return (
     <div className="container-editorial py-24">
       <p className="label-eyebrow text-rust mb-4">Commission</p>
@@ -48,15 +56,15 @@ export default async function CommissionDetailPage(props: PageProps<"/account/co
             <div className="mt-12">
               <p className="label-eyebrow text-ink/50 mb-6">Updates</p>
               <div className="space-y-6">
-                {commission.productionUpdates.map((u) => (
+                {commission.productionUpdates.map((u, i) => (
                   <div key={u.id} className="flex gap-6">
                     <p className="w-28 shrink-0 text-xs text-ink/40 uppercase pt-1">{formatDate(u.createdAt)}</p>
                     <div className="flex-1">
                       <p className="text-sm font-semibold mb-1">{u.stage.replace(/_/g, " ")}</p>
                       <p className="text-sm text-ink/70 mb-2">{u.message}</p>
-                      {u.photoUrl && (
+                      {updatePhotoUrls[i] && (
                         <div className="relative h-40 w-40 border border-line">
-                          <Image src={u.photoUrl} alt="Production update" fill unoptimized className="object-cover" />
+                          <Image src={updatePhotoUrls[i]} alt="Production update" fill unoptimized className="object-cover" />
                         </div>
                       )}
                     </div>

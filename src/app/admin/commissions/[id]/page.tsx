@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getAdminCommissionDetail, nextStageOptions, STAGE_ORDER, STAGE_LABELS } from "@/lib/admin/service";
 import { suggestArtists } from "@/lib/ai/artistMatchmaker";
 import { requireAdmin } from "@/lib/auth/guards";
+import { resolveAssetUrl } from "@/lib/storage";
 import { formatDate, formatPrice } from "@/lib/format";
 import {
   AssignArtistPanel,
@@ -44,9 +45,13 @@ export default async function AdminCommissionDetailPage(props: PageProps<"/admin
   const reachedStages = commission.productionStages.map((s) => s.stage);
   const stageOptions = nextStageOptions(reachedStages);
 
-  const [allArtists, suggested] = await Promise.all([
+  const [allArtists, suggested, referenceImageUrls] = await Promise.all([
     db.artist.findMany({ orderBy: { name: "asc" } }),
     suggestArtists(themes.length ? themes : selectedDirection ? JSON.parse(selectedDirection.themesJson) : []),
+    // Resolved server-side at render time (never persisted) — these are
+    // private, short-lived signed URLs, not the stable value stored on
+    // each ReferenceImage row.
+    Promise.all(commission.referenceImages.map((ref) => resolveAssetUrl(ref.url))),
   ]);
 
   return (
@@ -126,11 +131,13 @@ export default async function AdminCommissionDetailPage(props: PageProps<"/admin
                 <div>
                   <p className="label-eyebrow text-ink/40 mb-2">Reference Images</p>
                   <div className="flex flex-wrap gap-3">
-                    {commission.referenceImages.map((ref) => (
-                      <div key={ref.id} className="relative h-20 w-20 border border-line">
-                        <Image src={ref.url} alt="Reference" fill unoptimized className="object-cover" />
-                      </div>
-                    ))}
+                    {commission.referenceImages.map((ref, i) =>
+                      referenceImageUrls[i] ? (
+                        <div key={ref.id} className="relative h-20 w-20 border border-line">
+                          <Image src={referenceImageUrls[i]} alt="Reference" fill unoptimized className="object-cover" />
+                        </div>
+                      ) : null,
+                    )}
                   </div>
                 </div>
               )}

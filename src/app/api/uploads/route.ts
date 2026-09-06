@@ -1,30 +1,38 @@
 import { NextResponse } from "next/server";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { requireSession, handleApiError, ApiError } from "@/lib/auth/guards";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { detectImageExtension } from "@/lib/uploadSecurity";
+import { getStorage, referenceImageKey, productionPhotoKey } from "@/lib/storage";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8MB
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const CONTENT_TYPE_FOR_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+};
 
 const LIMIT = 20;
 const WINDOW_MS = 5 * 60 * 1000;
 
 /**
- * Local-disk reference image uploads for MVP/dev. In production, swap this
- * for a real object store (S3-compatible bucket) — the response shape
- * (`{ url }`) is the only contract callers depend on, so the swap is
- * isolated to this file.
+ * Reference-image / production-photo uploads, backed by object storage
+ * (see src/lib/storage). Both current asset kinds are PRIVATE (customer
+ * reference uploads and production photos are never public — see
+ * src/lib/storage/objectKeys.ts), so this route always uploads with
+ * visibility: "private" and returns a short-lived signed URL for immediate
+ * client-side preview alongside the stable `key` callers must persist.
+ *
+ * Order is deliberately: authenticate -> rate limit (by the now-known user
+ * id, more precise than by IP) -> validate -> authorize (commission
+ * ownership) -> upload. This is the same order Phase A established; C2
+ * only swaps what happens at the final step.
  */
 export async function POST(request: Request) {
   try {
     const session = await requireSession();
 
-    // Keyed by the now-known user id rather than IP — more precise, and
-    // this endpoint requires auth anyway so the identity is already known.
     const rate = await checkRateLimit("uploads", session.id, LIMIT, WINDOW_MS);
     if (!rate.allowed) {
       return NextResponse.json(
@@ -59,11 +67,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Optional association with an existing commission, where the data
-    // model already supports it (ReferenceImage/ProductionUpdate both key
-    // on commissionId). Uploads made during Studio intake — before a
-    // commission exists yet — have no id to pass and land in "unassigned",
-    // exactly as before.
+    // Optional association with an existing commission. Uploads made
+    // during Studio intake — before a commission exists yet — have no id
+    // to pass and are keyed by the uploading customer instead.
     const commissionIdRaw = formData.get("commissionId");
     const commissionId = typeof commissionIdRaw === "string" && commissionIdRaw.length > 0 ? commissionIdRaw : null;
     if (commissionId) {
@@ -77,16 +83,22 @@ export async function POST(request: Request) {
       }
     }
 
-    const subDir = commissionId ?? "unassigned";
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", subDir);
-    await mkdir(uploadsDir, { recursive: true });
+    const key = commissionId ? productionPhotoKey(commissionId, ext) : referenceImageKey(session.id, ext);
+    const storage = getStorage();
+    await storage.putObject({
+      key,
+      body: bytes,
+      contentType: CONTENT_TYPE_FOR_EXT[ext],
+      visibility: "private",
+    });
 
-    // Randomized filename only — the original filename is never read from
-    // the upload or stored/echoed back anywhere.
-    const filename = `${randomUUID()}.${ext}`;
-    await writeFile(path.join(uploadsDir, filename), bytes);
-
-    return NextResponse.json({ url: `/uploads/${subDir}/${filename}` });
+    // `url` is for immediate client-side preview only (see
+    // ReferenceUploader.tsx) — it is a short-lived signed URL and must
+    // never be the value persisted to the database. `key` is the stable
+    // value callers should submit onward (into referenceImageUrls /
+    // photoUrl), to be re-resolved to a fresh signed URL at render time.
+    const url = await storage.getSignedUrl(key, "private");
+    return NextResponse.json({ key, url });
   } catch (err) {
     return handleApiError(err);
   }

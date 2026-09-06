@@ -49,6 +49,9 @@ next-env.d.ts
 /prisma/dev.db-wal
 /prisma/dev.db-shm
 
-# user-uploaded reference images (local-disk uploads in dev)
+# user-uploaded reference images (local-disk uploads in dev, pre-C2)
 /public/uploads/*
 !/public/uploads/.gitkeep
+
+# local object-storage emulation (STORAGE_PROVIDER=local) — see src/lib/storage
+/.local-storage/
