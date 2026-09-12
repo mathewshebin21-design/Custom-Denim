@@ -172,18 +172,36 @@ commission dashboard with overview metrics.
 
 **Phase 2 (built further than the brief's minimum):** artist assignment,
 full production-stage tracking with customer-visible progress updates,
-manual payment/shipment tracking, post-delivery reviews.
+Stripe-backed payments with a server-side payment→production gate (see
+[Payments](#payments)), post-delivery reviews.
 
 **Phase 3 (built the core of):** Art Passport with QR verification and a
-public passport page.
+public passport page; a placeholder React Three Fiber 3D garment viewer
+(`src/components/studio/JacketViewer3D.tsx`, isolated behind the
+admin-only `/studio-3d-preview` route) proving the R3F integration itself
+— camera, lighting, orbit controls, SSR handling — ahead of a real
+Blender-authored asset.
 
-**Deliberately not built** (per the brief's own guidance, and because they
-need real third-party credentials this environment doesn't have): a live
-payment gateway (Stripe et al. — `Payment` is currently an admin-tracked
-ledger row), a paid image-generation model for concept art, a separate
-artist-facing portal (admin currently manages artist-side updates on their
-behalf), referrals, personalization, and deeper analytics beyond the admin
-overview's basic metrics.
+**Also built:** PostgreSQL as the database in every environment (C1, see
+[Database](#database)); object storage for uploads behind a
+provider-agnostic `StorageService`, local disk in dev / any S3-compatible
+bucket in production (C2, see [Object storage](#object-storage)); Motion
+(`motion/react`) micro-interactions across the Studio UI and a GSAP reveal
+on the Art Passport page, both reduced-motion aware.
+
+**Deliberately not built yet** (need real third-party credentials/assets
+this environment doesn't have, or are explicitly out of scope for now): a
+real Blender-authored 3D garment asset (the R3F viewer above uses
+placeholder box geometry only), a paid image-generation model for concept
+art (`visualConceptGenerator.ts` produces a labeled placeholder SVG), a
+live end-to-end test against the real Stripe API (webhook signature
+verification and idempotency are tested via a local HMAC-signed fixture —
+see [Local testing without live Stripe access](#local-testing-without-live-stripe-access)
+— but no live Checkout Session has been created against Stripe's servers
+from this environment), refunds/cancellations, a separate artist-facing
+portal (admin currently manages artist-side updates on their behalf),
+referrals, personalization, deeper analytics beyond the admin overview's
+basic metrics, and a CI pipeline / production hosting setup.
 
 ## Database
 
