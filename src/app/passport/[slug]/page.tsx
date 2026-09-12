@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
+import { PassportReveal } from "@/components/passport/PassportReveal";
 
 async function getPassport(slug: string) {
   return db.artPassport.findUnique({
@@ -47,6 +48,7 @@ export default async function PassportPage(props: PageProps<"/passport/[slug]">)
 
   return (
     <div className="container-editorial py-24">
+      <PassportReveal>
       <p className="label-eyebrow text-rust mb-4">Art Passport</p>
       <div className="grid gap-16 md:grid-cols-2">
         <div>
@@ -141,6 +143,7 @@ export default async function PassportPage(props: PageProps<"/passport/[slug]">)
           </div>
         </div>
       )}
+      </PassportReveal>
     </div>
   );
 }

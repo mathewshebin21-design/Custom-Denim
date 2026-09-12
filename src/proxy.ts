@@ -7,7 +7,7 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
 
-  if (pathname.startsWith("/admin")) {
+  if (pathname.startsWith("/admin") || pathname.startsWith("/studio-3d-preview")) {
     if (!session || session.role !== "admin") {
       const url = new URL("/login", request.url);
       url.searchParams.set("next", pathname);
@@ -27,5 +27,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/account/:path*", "/create/:path*"],
+  matcher: ["/admin/:path*", "/account/:path*", "/create/:path*", "/studio-3d-preview/:path*"],
 };

@@ -4,8 +4,25 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { motion, AnimatePresence, useReducedMotion, type Variants } from "motion/react";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { formatDate, formatPrice } from "@/lib/format";
+
+// Concept-materialization choreography: the three directions arrive as a
+// staggered reveal (not all at once), the concept image cross-fades rather
+// than snapping when a new version replaces it, and the approval panel
+// slides in/out rather than toggling instantly. Every animated value here
+// collapses to an instant, no-offset transition under prefers-reduced-motion
+// (see `motionProps` below) — never hidden content, never a blocked
+// interaction, just no motion.
+const directionsContainer: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.12 } },
+};
+const directionCard: Variants = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+};
 
 export type WorkspaceDirection = {
   id: string;
@@ -61,9 +78,17 @@ export function StudioWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [confirmingApproval, setConfirmingApproval] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
 
   const currentVersion = versions[versions.length - 1] ?? null;
   const awaitingDirectionChoice = versions.length === 0;
+
+  // Reduced-motion users get the exact same end state, immediately — no
+  // stagger delay, no offset to animate away from.
+  const containerVariants = prefersReducedMotion ? { hidden: {}, show: {} } : directionsContainer;
+  const cardVariants = prefersReducedMotion
+    ? { hidden: { opacity: 1, y: 0 }, show: { opacity: 1, y: 0 } }
+    : directionCard;
 
   async function selectDirection(creativeDirectionId: string) {
     setLoading("select");
@@ -130,9 +155,14 @@ export function StudioWorkspace({
           able to refine it from here.
         </p>
         {error && <p className="text-sm text-rust mb-6">{error}</p>}
-        <div className="grid gap-8 md:grid-cols-3">
+        <motion.div
+          className="grid gap-8 md:grid-cols-3"
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+        >
           {directions.map((d) => (
-            <div key={d.id} className="border border-line flex flex-col">
+            <motion.div key={d.id} variants={cardVariants} className="border border-line flex flex-col">
               <div className="p-6 flex-1">
                 <p className="font-display text-xl mb-3">{d.title}</p>
                 <p className="text-sm text-ink/70 mb-4">{d.narrative}</p>
@@ -152,9 +182,9 @@ export function StudioWorkspace({
                   {loading === "select" ? "Loading…" : "Choose This Direction"}
                 </Button>
               </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -172,9 +202,20 @@ export function StudioWorkspace({
         <h2 className="font-display text-3xl mb-6">{currentVersion.directionTitle}</h2>
 
         <div className="relative aspect-[4/5] max-w-md bg-paper-dim mb-8 overflow-hidden">
-          {currentVersion.imageUrl && (
-            <Image src={currentVersion.imageUrl} alt={currentVersion.directionTitle} fill unoptimized className="object-cover" />
-          )}
+          <AnimatePresence mode="wait">
+            {currentVersion.imageUrl && (
+              <motion.div
+                key={currentVersion.id}
+                initial={prefersReducedMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.35, ease: "easeInOut" }}
+                className="absolute inset-0"
+              >
+                <Image src={currentVersion.imageUrl} alt={currentVersion.directionTitle} fill unoptimized className="object-cover" />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 mb-10 text-sm">
@@ -212,37 +253,45 @@ export function StudioWorkspace({
 
         {error && <p className="text-sm text-rust mb-4">{error}</p>}
 
-        {!isApproved && confirmingApproval && (
-          <div className="border border-ink p-6 max-w-lg space-y-4">
-            <p className="label-eyebrow text-rust">Confirm Approval</p>
-            <p className="text-sm text-ink/70">
-              You&apos;re approving <span className="font-semibold text-ink">{currentVersion.directionTitle}</span>,
-              version {currentVersion.versionNumber}, at the price shown below.
-            </p>
-            <p className="font-display text-3xl">{formatPrice(priceCents)}</p>
-            <p className="text-xs text-ink/50">
-              Approving locks this price and creates an order — this action
-              cannot be undone from here. You&apos;ll be asked to complete
-              payment next; production begins only once payment is
-              confirmed.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <Button
-                variant="secondary"
-                disabled={loading !== null}
-                onClick={() => {
-                  setConfirmingApproval(false);
-                  setError(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button disabled={loading !== null} onClick={confirmApprove}>
-                {loading === "approve" ? "Creating Order…" : "Confirm & Create Order"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {!isApproved && confirmingApproval && (
+            <motion.div
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: "easeOut" }}
+              className="border border-ink p-6 max-w-lg space-y-4"
+            >
+              <p className="label-eyebrow text-rust">Confirm Approval</p>
+              <p className="text-sm text-ink/70">
+                You&apos;re approving <span className="font-semibold text-ink">{currentVersion.directionTitle}</span>,
+                version {currentVersion.versionNumber}, at the price shown below.
+              </p>
+              <p className="font-display text-3xl">{formatPrice(priceCents)}</p>
+              <p className="text-xs text-ink/50">
+                Approving locks this price and creates an order — this action
+                cannot be undone from here. You&apos;ll be asked to complete
+                payment next; production begins only once payment is
+                confirmed.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <Button
+                  variant="secondary"
+                  disabled={loading !== null}
+                  onClick={() => {
+                    setConfirmingApproval(false);
+                    setError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button disabled={loading !== null} onClick={confirmApprove}>
+                  {loading === "approve" ? "Creating Order…" : "Confirm & Create Order"}
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {!isApproved && !confirmingApproval && (
           <div className="space-y-4 max-w-lg">
