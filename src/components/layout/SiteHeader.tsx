@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getSession } from "@/lib/auth/session";
 import { ButtonLink } from "@/components/ui/Button";
 import { SignOutButton } from "@/components/auth/SignOutButton";
@@ -17,8 +18,15 @@ export async function SiteHeader() {
   return (
     <header className="relative border-b border-line">
       <div className="container-editorial flex h-20 items-center justify-between">
-        <Link href="/" className="font-display text-xl tracking-tight whitespace-nowrap">
-          Custom Denim
+        <Link href="/" className="flex items-center gap-2.5 whitespace-nowrap">
+          <Image
+            src="/brand/ease-wear-mark.jpg"
+            alt=""
+            width={32}
+            height={32}
+            className="rounded-sm"
+          />
+          <span className="font-display text-xl tracking-tight">Ease Wear</span>
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

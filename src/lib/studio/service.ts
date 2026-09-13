@@ -384,7 +384,7 @@ export async function createCheckoutForCommission(
     orderId: order.id,
     amountCents: order.priceCents,
     currency: order.currency,
-    description: `Custom Denim — ${commission.garment.label}`,
+    description: `Ease Wear — ${commission.garment.label}`,
     customerEmail: commission.customer.email,
     successUrl: `${appBaseUrl}/account/commissions/${commissionId}?checkout=success`,
     cancelUrl: `${appBaseUrl}/account/commissions/${commissionId}?checkout=cancelled`,

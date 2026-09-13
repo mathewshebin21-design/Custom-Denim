@@ -101,7 +101,7 @@ async function main() {
   }
 
   console.log("Seeding admin user...");
-  const adminEmail = "admin@customdenim.studio";
+  const adminEmail = "admin@easewear.studio";
   const existingAdmin = await db.user.findUnique({ where: { email: adminEmail } });
   if (!existingAdmin) {
     await db.user.create({
@@ -117,19 +117,19 @@ async function main() {
   console.log("Seeding demo artists...");
   const artistSeeds = [
     {
-      email: "maya@customdenim.studio",
+      email: "maya@easewear.studio",
       name: "Maya Ortega",
       bio: "Hand-embroidery and textile collage artist, known for archival, memory-driven pieces.",
       styleTags: ["memory", "archive", "embroidery", "texture", "botanical"],
     },
     {
-      email: "theo@customdenim.studio",
+      email: "theo@easewear.studio",
       name: "Theo Nakamura",
       bio: "Painter working in high-contrast, cinematic compositions across denim and canvas.",
       styleTags: ["noir", "cinematic", "contrast", "silhouette", "portrait"],
     },
     {
-      email: "priya@customdenim.studio",
+      email: "priya@easewear.studio",
       name: "Priya Shah",
       bio: "Mural and graffiti-trained painter bringing raw, energetic mark-making to wearable pieces.",
       styleTags: ["street art", "texture", "spontaneity", "color", "abstract"],
@@ -159,11 +159,19 @@ async function main() {
   }
 
   console.log("Seeding a completed demo commission (so the gallery isn't empty)...");
-  const demoEmail = "demo.customer@customdenim.studio";
+  const demoEmail = "demo.customer@easewear.studio";
   const existingDemoCommission = await db.commission.findFirst({ where: { customer: { email: demoEmail } } });
   if (!existingDemoCommission) {
     const jacket = await db.garment.findFirstOrThrow({ where: { type: "jacket" } });
-    const priya = await db.artist.findFirstOrThrow({ where: { name: "Priya Shah" } });
+    // Looked up by the seeded artist's stable email, not by display name —
+    // `name` is not unique (this bit a manual DB cleanup during a rebrand:
+    // two "Priya Shah" artist rows briefly coexisted under old/new email
+    // domains, and findFirst-by-name silently picked the wrong one).
+    const priyaUser = await db.user.findUniqueOrThrow({
+      where: { email: "priya@easewear.studio" },
+      include: { artist: true },
+    });
+    const priya = priyaUser.artist!;
 
     const demoCustomer = await db.user.upsert({
       where: { email: demoEmail },

@@ -33,11 +33,11 @@ import { createClient as createLibsqlClient } from "@libsql/client";
 import { db } from "../src/lib/db";
 
 const KNOWN_SEED_EMAILS = new Set([
-  "admin@customdenim.studio",
-  "maya@customdenim.studio",
-  "theo@customdenim.studio",
-  "priya@customdenim.studio",
-  "demo.customer@customdenim.studio",
+  "admin@easewear.studio",
+  "maya@easewear.studio",
+  "theo@easewear.studio",
+  "priya@easewear.studio",
+  "demo.customer@easewear.studio",
 ]);
 
 type Row = Record<string, unknown>;

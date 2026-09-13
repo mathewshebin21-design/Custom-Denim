@@ -17,8 +17,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "Custom Denim — Wear Your Story",
-    template: "%s — Custom Denim",
+    default: "Ease Wear — Wear Your Story",
+    template: "%s — Ease Wear",
   },
   description:
     "Your story becomes an original piece of wearable art — designed with AI, created by human artists, made once for you.",

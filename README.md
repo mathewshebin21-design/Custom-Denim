@@ -1,4 +1,4 @@
-# Custom Denim — Wear Your Story
+# Ease Wear — Wear Your Story
 
 An AI-designed, artist-made, one-of-one wearable-art platform. Customers
 describe a personal story in the **Custom Creation Studio**; an AI Creative
@@ -51,9 +51,9 @@ Open http://localhost:3000.
 
 | Role | Email | Password |
 |---|---|---|
-| Admin | `admin@customdenim.studio` | `ChangeMe123!` |
-| Artist | `maya@customdenim.studio` / `theo@customdenim.studio` / `priya@customdenim.studio` | `ChangeMe123!` |
-| Demo customer | `demo.customer@customdenim.studio` | `ChangeMe123!` |
+| Admin | `admin@easewear.studio` | `ChangeMe123!` |
+| Artist | `maya@easewear.studio` / `theo@easewear.studio` / `priya@easewear.studio` | `ChangeMe123!` |
+| Demo customer | `demo.customer@easewear.studio` | `ChangeMe123!` |
 
 The seed script also creates one **fully completed commission** (jacket,
 "Raw Street Art" direction, delivered, with a published Art Passport) so the

@@ -1,11 +1,21 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export function SiteFooter() {
   return (
     <footer className="border-t border-line mt-auto">
       <div className="container-editorial py-14 grid gap-10 md:grid-cols-4">
         <div className="md:col-span-2">
-          <p className="font-display text-lg mb-3">Custom Denim</p>
+          <p className="flex items-center gap-2 font-display text-lg mb-3">
+            <Image
+              src="/brand/ease-wear-mark.jpg"
+              alt=""
+              width={24}
+              height={24}
+              className="rounded-sm"
+            />
+            Ease Wear
+          </p>
           <p className="text-sm text-ink/70 max-w-sm">
             AI-designed. Artist-made. One-of-one. A wearable-art studio where
             your story becomes an original garment, designed with AI and
@@ -31,7 +41,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="container-editorial py-6 border-t border-line text-xs text-ink/50">
-        © {new Date().getFullYear()} Custom Denim Studio. Every piece is one-of-one.
+        © {new Date().getFullYear()} Ease Wear Studio. Every piece is one-of-one.
       </div>
     </footer>
   );
