@@ -25,7 +25,12 @@ export async function SiteHeader() {
             width={32}
             height={32}
           />
-          <span className="font-display text-xl tracking-tight">Ease Wear</span>
+          <Image
+            src="/brand/ease-wear-wordmark.png"
+            alt="Ease Wear"
+            width={102}
+            height={30}
+          />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

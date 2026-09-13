@@ -6,15 +6,20 @@ export function SiteFooter() {
     <footer className="border-t border-line mt-auto">
       <div className="container-editorial py-14 grid gap-10 md:grid-cols-4">
         <div className="md:col-span-2">
-          <p className="flex items-center gap-2 font-display text-lg mb-3">
+          <div className="flex items-center gap-2 mb-3">
             <Image
               src="/brand/ease-wear-mark.png"
               alt=""
               width={24}
               height={24}
             />
-            Ease Wear
-          </p>
+            <Image
+              src="/brand/ease-wear-wordmark.png"
+              alt="Ease Wear"
+              width={75}
+              height={22}
+            />
+          </div>
           <p className="text-sm text-ink/70 max-w-sm">
             AI-designed. Artist-made. One-of-one. A wearable-art studio where
             your story becomes an original garment, designed with AI and
