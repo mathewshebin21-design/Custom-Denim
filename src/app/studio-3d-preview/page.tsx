@@ -11,9 +11,10 @@ export const metadata: Metadata = {
  * Deliberately NOT linked from any navigation and NOT part of the live
  * customer Studio flow. This route exists only to prove the React Three
  * Fiber integration (Canvas, SSR handling, lighting, controls) and the
- * fabric/wash material-selection system work, ahead of a real
- * Blender-authored garment asset existing. See JacketViewer3D.tsx for why
- * the geometry itself is a placeholder — the material system is not.
+ * fabric/wash material-selection system work, ahead of a professionally
+ * modeled garment asset existing. See JacketViewer3D.tsx for what the
+ * current mesh actually is (a scripted, not hand-modeled, jacket shape)
+ * and why — the material system is not placeholder.
  */
 export default async function Studio3DPreviewPage() {
   // Not covered by src/proxy.ts's matcher (which only guards /admin,
@@ -29,12 +30,14 @@ export default async function Studio3DPreviewPage() {
       <p className="max-w-xl text-sm text-ink/70 mb-10">
         This proves the React Three Fiber viewer integration (camera,
         lighting, orbit controls, SSR handling) and the fabric/wash
-        material-selection system render correctly. The geometry shown is a
-        placeholder box-jacket, not a real garment — no Blender-authored
-        asset exists yet — but the material picker below applies to
-        whatever geometry ends up here, placeholder or real. This page is
-        not linked from the site&apos;s navigation and is not part of the
-        customer-facing Custom Creation Studio.
+        material-selection system render correctly. The jacket shown is a
+        scripted Blender mesh (torso, sleeves, collar, placket built via
+        Python, not by a human 3D artist) — a real garment silhouette, but
+        still simplified (no folds, no lapels, no lining), standing in for
+        a professionally modeled asset. The material picker below applies
+        to whatever geometry ends up here. This page is not linked from the
+        site&apos;s navigation and is not part of the customer-facing
+        Custom Creation Studio.
       </p>
       <JacketViewer3DLoader />
     </div>
