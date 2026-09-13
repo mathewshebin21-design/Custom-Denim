@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { getSession } from "@/lib/auth/session";
 import { ButtonLink } from "@/components/ui/Button";
 import { SignOutButton } from "@/components/auth/SignOutButton";
@@ -19,18 +18,13 @@ export async function SiteHeader() {
     <header className="relative border-b border-line">
       <div className="container-editorial flex h-20 items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 whitespace-nowrap">
-          <Image
-            src="/brand/ease-wear-mark.png"
-            alt=""
-            width={32}
-            height={32}
-          />
-          <Image
-            src="/brand/ease-wear-wordmark.png"
-            alt="Ease Wear"
-            width={102}
-            height={30}
-          />
+          {/* eslint-disable-next-line @next/next/no-img-element -- static vector
+              logo assets; next/image's optimizer doesn't serve local SVGs
+              without enabling dangerouslyAllowSVG, not worth it for two
+              small, fully-trusted, self-authored vector files */}
+          <img src="/brand/ease-wear-mark.svg" alt="" width={32} height={32} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/ease-wear-wordmark.svg" alt="Ease Wear" width={94} height={30} />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

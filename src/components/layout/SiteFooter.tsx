@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 
 export function SiteFooter() {
   return (
@@ -7,18 +6,10 @@ export function SiteFooter() {
       <div className="container-editorial py-14 grid gap-10 md:grid-cols-4">
         <div className="md:col-span-2">
           <div className="flex items-center gap-2 mb-3">
-            <Image
-              src="/brand/ease-wear-mark.png"
-              alt=""
-              width={24}
-              height={24}
-            />
-            <Image
-              src="/brand/ease-wear-wordmark.png"
-              alt="Ease Wear"
-              width={75}
-              height={22}
-            />
+            {/* eslint-disable-next-line @next/next/no-img-element -- see SiteHeader.tsx */}
+            <img src="/brand/ease-wear-mark.svg" alt="" width={24} height={24} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/ease-wear-wordmark.svg" alt="Ease Wear" width={69} height={22} />
           </div>
           <p className="text-sm text-ink/70 max-w-sm">
             AI-designed. Artist-made. One-of-one. A wearable-art studio where
