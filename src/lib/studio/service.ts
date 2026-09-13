@@ -5,7 +5,7 @@ import { ApiError } from "@/lib/auth/guards";
 import { generateCreativeDirections } from "@/lib/ai/creativeDirector";
 import { interpretDesign } from "@/lib/ai/designInterpreter";
 import { assessFeasibility } from "@/lib/ai/feasibilityAssistant";
-import { generateConceptImage } from "@/lib/ai/visualConceptGenerator";
+import { generateConceptImage } from "@/lib/ai/imageGeneration";
 import { getPaymentService } from "@/lib/payments";
 import type { CreativeDirectionOutput, DesignSpec, StudioIntake } from "@/types/studio";
 
@@ -185,9 +185,13 @@ export async function selectDirection(
 
   const spec = await interpretDesign(intake, directionOutput);
   const feasibility = await assessFeasibility(commission.garment.label, spec);
-  const imageUrl = generateConceptImage({
+  const imageUrl = await generateConceptImage({
     title: direction.title,
+    narrative: directionOutput.narrative,
     colorPalette: directionOutput.colorPalette,
+    themes: directionOutput.themes,
+    placement: directionOutput.placement,
+    garmentLabel: commission.garment.label,
     versionSeed: `${direction.id}-v1`,
   });
 
@@ -252,9 +256,13 @@ export async function reviseConcept(
 
   const spec = await interpretDesign(intake, directionOutput, priorSpec, feedback);
   const feasibility = await assessFeasibility(commission.garment.label, spec);
-  const imageUrl = generateConceptImage({
+  const imageUrl = await generateConceptImage({
     title: direction.title,
+    narrative: directionOutput.narrative,
     colorPalette: directionOutput.colorPalette,
+    themes: directionOutput.themes,
+    placement: directionOutput.placement,
+    garmentLabel: commission.garment.label,
     versionSeed: `${direction.id}-v${currentVersion.versionNumber + 1}`,
   });
 

@@ -8,12 +8,13 @@ import { randomUUID } from "node:crypto";
  * email, or anything else that could leak information through the key
  * itself.
  *
- * Only the two kinds of asset the application actually uploads today are
- * covered (reference images, production update photos). The prefixes below
- * (concepts/, passports/, garments/) are reserved, documented conventions
- * for the frozen future Blender/R3F/Art-Passport work — not implemented
- * here, so future phases don't need a new storage architecture, only new
- * key builders following the same pattern.
+ * Three kinds of asset are covered: reference images and production update
+ * photos (both private — only the owning customer and admin ever see
+ * them), and AI-generated concept images (public — see `conceptImageKey`
+ * below for why). The `passports/`/`garments/` prefixes remain reserved,
+ * documented conventions for the still-future Blender/R3F work — not
+ * implemented here, so that phase doesn't need a new storage architecture,
+ * only a new key builder following the same pattern.
  */
 
 function assetId(ext: string): string {
@@ -35,7 +36,19 @@ export function productionPhotoKey(commissionId: string, ext: string): string {
   return `private/commissions/${commissionId}/production/${assetId(ext)}`;
 }
 
-// Reserved for future phases (not implemented in C2):
+/** AI-generated concept visualization images (see
+ * `src/lib/ai/imageGeneration/`). Public, not namespaced by
+ * commission/customer: the same image is already displayed on public pages
+ * (Art gallery, homepage, a piece's Art Passport) as well as the owning
+ * customer's private Studio/account views, so there's no private/public
+ * split to preserve — this asset type has never had real access control
+ * (previously an inline SVG data URI baked into server-rendered HTML). The
+ * asset id alone (a random UUID) is what keeps unguessed/unapproved
+ * concept images practically unreachable, same as today. */
+export function conceptImageKey(ext: string): string {
+  return `public/concepts/${assetId(ext)}`;
+}
+
+// Reserved for future phases (not implemented yet):
 //   public/passports/{passportId}/{assetId}            — published Art Passport photos
-//   private/concepts/{conceptId}/versions/{versionId}/artwork/{assetId} — future AI/hybrid concept renders
 //   public/garments/{garmentId}/models/{assetId}.glb    — Blender-authored GLB assets

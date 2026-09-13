@@ -1,18 +1,14 @@
+import type { ConceptImageParams } from "./types";
+
 /**
- * Visual Concept Generator — produces a concept visualization for a
- * creative direction + design spec.
- *
- * This implementation renders a deterministic, abstract SVG "concept card"
- * from the direction's palette and title rather than calling a paid image
- * model (no image-gen credentials are wired up in this environment). It
+ * Placeholder provider — renders a deterministic, abstract SVG "concept
+ * card" from the direction's palette and title rather than calling a paid
+ * image model. This is the fallback used whenever no real image-generation
+ * provider is configured (see `../index.ts`'s `isImageGenConfigured`), and
+ * is what every demo/test run without an OpenAI key actually sees. It
  * intentionally looks and is labeled like a concept sketch, never a
  * finished-garment photo, per the product principle that concept imagery
  * must never be mistaken for the final piece.
- *
- * Swap point: replace `renderConceptSvg` below with a call to a real
- * image-generation provider (e.g. an image model given the same palette
- * and motifs as a prompt) without touching any caller — every call site
- * only depends on this module's exported `generateConceptImage` signature.
  */
 
 function hashString(input: string): number {
@@ -103,11 +99,7 @@ function renderConceptSvg(title: string, palette: string[], seed: string): strin
 </svg>`;
 }
 
-export function generateConceptImage(params: {
-  title: string;
-  colorPalette: string[];
-  versionSeed: string;
-}): string {
+export function generatePlaceholderConceptImage(params: ConceptImageParams): string {
   const svg = renderConceptSvg(params.title, params.colorPalette, params.versionSeed);
   const base64 = Buffer.from(svg, "utf-8").toString("base64");
   return `data:image/svg+xml;base64,${base64}`;

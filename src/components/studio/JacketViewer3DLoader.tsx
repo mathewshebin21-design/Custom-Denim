@@ -4,9 +4,12 @@ import dynamic from "next/dynamic";
 
 // `next/dynamic` with `ssr: false` must be called from a Client Component —
 // this thin wrapper is that boundary, so the server-rendered preview page
-// itself stays a plain Server Component.
-const JacketViewer3D = dynamic(
-  () => import("./JacketViewer3D").then((m) => m.JacketViewer3D),
+// itself stays a plain Server Component. Loads the configurator (viewer +
+// material picker together), not just the bare viewer, since the picker
+// also needs client-side state and there's no reason to split that state
+// across the SSR boundary.
+const JacketConfigurator = dynamic(
+  () => import("./JacketConfigurator").then((m) => m.JacketConfigurator),
   {
     ssr: false,
     loading: () => (
@@ -18,5 +21,5 @@ const JacketViewer3D = dynamic(
 );
 
 export function JacketViewer3DLoader() {
-  return <JacketViewer3D />;
+  return <JacketConfigurator />;
 }

@@ -74,6 +74,8 @@ All in `.env` (see `.env.example` for the annotated template):
 | `AUTH_SECRET` | yes | Signs session JWTs. Generate with `openssl rand -base64 32` |
 | `ANTHROPIC_API_KEY` | no | Powers the real AI Creative Director / Design Interpreter / Feasibility Assistant. **Without it, the Studio runs in a clearly-labeled offline fallback mode** — deterministic, hand-written creative directions so the whole flow (including versioning, revisions, approval) still works for demos and testing without a key |
 | `ANTHROPIC_MODEL` | no | Overrides the Claude model ID (defaults to `claude-sonnet-5`) |
+| `OPENAI_API_KEY` | no | Powers real AI-generated concept art (OpenAI's image API). **Without it, concept versions fall back to a clearly-labeled placeholder SVG concept card** — see [Concept image generation](#concept-image-generation) |
+| `OPENAI_IMAGE_MODEL` | no | Overrides the OpenAI image model ID (defaults to `gpt-image-1`) |
 | `APP_BASE_URL` | yes | Used to build the Art Passport's QR-code URL and the Stripe Checkout success/cancel redirect URLs |
 | `APP_ENV` | yes | `development`, `staging`, or `production`. `prisma/seed.ts` refuses to run unless this is `development` or `staging` — see below |
 | `STORAGE_PROVIDER` | yes | `local` or `s3` — see [Object storage](#object-storage). Independent of `APP_ENV`; never inferred from it |
@@ -87,6 +89,37 @@ Set `ANTHROPIC_API_KEY` in `.env` and restart the dev server. No other
 change is needed — `src/lib/ai/gateway.ts` checks for the key at call time
 and every AI service (`creativeDirector.ts`, `designInterpreter.ts`,
 `feasibilityAssistant.ts`) has an offline fallback for when it's absent.
+
+### Concept image generation
+
+`src/lib/ai/imageGeneration/` produces the concept visualization shown for
+each `ConceptVersion`. Same offline-fallback shape as the text-generation
+side above: without `OPENAI_API_KEY` set, `generateConceptImage()` returns
+a placeholder — a deterministic, abstract SVG "concept card" rendered from
+the direction's title and palette, labeled "CONCEPT VISUALIZATION — NOT
+FINAL" — so the whole Studio flow (including versioning and revisions)
+works for demos/tests with zero AI credentials.
+
+With `OPENAI_API_KEY` set, it instead calls OpenAI's Images API
+(`gpt-image-1` by default) with a prompt built from the direction's title,
+narrative, palette, themes, and placement, then uploads the resulting PNG
+to storage via the existing `StorageService` (see
+[Object storage](#object-storage)) as a **public** object and returns its
+stable URL. Public, not private: the exact same image already renders on
+public pages (the Art gallery, homepage, and a piece's Art Passport, via
+`Artwork.approvedVersion.imageUrl`) as well as the customer's own private
+Studio/account views, so there's no private/public split to make here —
+this asset type has never had real access control (previously an inline
+SVG data URI baked directly into server-rendered HTML). A failed or
+misconfigured OpenAI call is caught and falls back to the placeholder
+rather than breaking the Studio flow — the same resilience pattern used
+for Stripe's best-effort `retrieveCheckoutSession` (see
+[Payments](#payments)).
+
+**Not live-tested in this environment:** this sandbox has never made a
+live call to `api.openai.com` — the fallback path (placeholder SVG) is
+what every screenshot and test run in this repo's history has actually
+exercised for concept art.
 
 ## Architecture
 
@@ -187,21 +220,24 @@ Blender-authored asset.
 provider-agnostic `StorageService`, local disk in dev / any S3-compatible
 bucket in production (C2, see [Object storage](#object-storage)); Motion
 (`motion/react`) micro-interactions across the Studio UI and a GSAP reveal
-on the Art Passport page, both reduced-motion aware.
+on the Art Passport page, both reduced-motion aware; real AI-generated
+concept art via OpenAI's image API, behind the same offline-fallback
+pattern as the Creative Director (see
+[Concept image generation](#concept-image-generation)).
 
 **Deliberately not built yet** (need real third-party credentials/assets
 this environment doesn't have, or are explicitly out of scope for now): a
 real Blender-authored 3D garment asset (the R3F viewer above uses
-placeholder box geometry only), a paid image-generation model for concept
-art (`visualConceptGenerator.ts` produces a labeled placeholder SVG), a
-live end-to-end test against the real Stripe API (webhook signature
-verification and idempotency are tested via a local HMAC-signed fixture —
-see [Local testing without live Stripe access](#local-testing-without-live-stripe-access)
-— but no live Checkout Session has been created against Stripe's servers
-from this environment), refunds/cancellations, a separate artist-facing
-portal (admin currently manages artist-side updates on their behalf),
-referrals, personalization, deeper analytics beyond the admin overview's
-basic metrics, and a CI pipeline / production hosting setup.
+placeholder box geometry only), a live end-to-end test against the real
+OpenAI Images API or the real Stripe API (both integrations are
+code-complete and fall back safely, but this sandbox has never reached
+`api.openai.com` or `api.stripe.com` — webhook signature verification and
+idempotency are tested via a local HMAC-signed fixture instead, see
+[Local testing without live Stripe access](#local-testing-without-live-stripe-access)),
+refunds/cancellations, a separate artist-facing portal (admin currently
+manages artist-side updates on their behalf), referrals, personalization,
+deeper analytics beyond the admin overview's basic metrics, and a CI
+pipeline / production hosting setup.
 
 ## Database
 

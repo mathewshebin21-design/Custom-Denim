@@ -3,7 +3,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
-import { generateConceptImage } from "../src/lib/ai/visualConceptGenerator";
+import { generateConceptImage } from "../src/lib/ai/imageGeneration";
 
 /**
  * Production safety guard. This script inserts demo data — a demo admin
@@ -206,9 +206,13 @@ async function main() {
       suggestedAdjustments: [],
     };
 
-    const imageUrl = generateConceptImage({
+    const imageUrl = await generateConceptImage({
       title: direction.title,
+      narrative: direction.narrative,
       colorPalette: direction.colorPalette,
+      themes: direction.themes,
+      placement: direction.placement,
+      garmentLabel: jacket.label,
       versionSeed: "demo-seed-v1",
     });
 
