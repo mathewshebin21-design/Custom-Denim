@@ -8,11 +8,10 @@ export function SiteFooter() {
         <div className="md:col-span-2">
           <p className="flex items-center gap-2 font-display text-lg mb-3">
             <Image
-              src="/brand/ease-wear-mark.jpg"
+              src="/brand/ease-wear-mark.png"
               alt=""
               width={24}
               height={24}
-              className="rounded-sm"
             />
             Ease Wear
           </p>

@@ -20,11 +20,10 @@ export async function SiteHeader() {
       <div className="container-editorial flex h-20 items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 whitespace-nowrap">
           <Image
-            src="/brand/ease-wear-mark.jpg"
+            src="/brand/ease-wear-mark.png"
             alt=""
             width={32}
             height={32}
-            className="rounded-sm"
           />
           <span className="font-display text-xl tracking-tight">Ease Wear</span>
         </Link>
