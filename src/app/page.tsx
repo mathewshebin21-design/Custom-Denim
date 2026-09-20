@@ -186,13 +186,27 @@ export default async function HomePage() {
         )}
       </ScrollReveal>
 
-      {/* Closing CTA — a charcoal accent band, not a full light/dark
-          inversion: on the old light-page palette, inverting to bg-ink
-          (dark) read as a deliberate dark contrast band, but with ink/paper
-          now themselves inverted (see globals.css), that same inversion
-          flipped into a jarring cream band on an otherwise all-dark page. */}
-      <ScrollReveal as="section" className="border-t border-line bg-paper-dim">
-        <div className="container-editorial py-24 text-center">
+      {/* Closing CTA — real footage again (a second cut of the same jacket-
+          on-model shoot as the hero), not the flat charcoal band this used
+          to be. min-h keeps the section tall enough that object-cover's
+          center crop doesn't slice through the "eW EASE WEAR" logo the
+          clip ends on — that logo sits in the vertical middle third of the
+          source frame, so a too-short section would crop it top/bottom.
+          Centered copy gets a uniform dark scrim rather than the hero's
+          left-right one, since there's no empty side to fade into. */}
+      <ScrollReveal as="section" className="relative min-h-[480px] overflow-hidden border-t border-line">
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          poster="/video/cta-model-poster.jpg"
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        >
+          <source src="/video/cta-model.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-paper/70" />
+        <div className="container-editorial relative flex min-h-[480px] flex-col items-center justify-center py-24 text-center">
           <h2 className="font-display text-4xl mb-6">Ready to wear your story?</h2>
           <ButtonLink href="/create">Create Your Piece</ButtonLink>
         </div>
