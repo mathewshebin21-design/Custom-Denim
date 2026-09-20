@@ -327,6 +327,43 @@ async function main() {
     });
   }
 
+  console.log("Seeding retail shop products...");
+  // Real starting catalog from Ease Wear's current surplus/thrifted stock
+  // sheet (Sept 2026), not fictional demo data like the rows above.
+  // Quantities weren't given per-SKU on that sheet ("message us for live
+  // photos, colours and sizes") — seeded at a conservative placeholder of 5
+  // each; adjust real on-hand counts at /admin/shop before going live.
+  // Prices are in INR, matching the sheet.
+  const retailProductSeeds = [
+    { title: "Snitch Shirts", category: "shirts", brand: "Snitch", description: "Contemporary shirts for sharp casual looks.", priceCents: 118500, source: "surplus_branded" },
+    { title: "U.S. Polo Half Shirts", category: "shirts", brand: "U.S. Polo Assn.", description: "Half-sleeve shirts with classic everyday styling.", priceCents: 135000, source: "surplus_branded" },
+    { title: "Pepe Shirts", category: "shirts", brand: "Pepe Jeans", description: "Versatile shirts for casual and smart-casual wear.", priceCents: 147000, source: "surplus_branded" },
+    { title: "Armani Exchange T-Shirts", category: "t_shirts", brand: "Armani Exchange", description: "Clean casual T-shirts with contemporary styling.", priceCents: 97500, source: "surplus_branded" },
+    { title: "Flying Machine Round", category: "t_shirts", brand: "Flying Machine", description: "Casual round-neck options with a youthful feel.", priceCents: 52500, source: "surplus_branded" },
+    { title: "Souled Store Drop Shoulder", category: "t_shirts", brand: "The Souled Store", description: "Relaxed drop-shoulder silhouettes for streetwear looks.", priceCents: 112500, source: "surplus_branded" },
+    { title: "Jack & Jones Jeans", category: "denim", brand: "Jack & Jones", description: "Everyday denim with modern styling.", priceCents: 172500, source: "surplus_branded" },
+    { title: "Blackberrys Jeans", category: "denim", brand: "Blackberrys", description: "Smart denim for polished casual dressing.", priceCents: 177000, source: "surplus_branded" },
+    { title: "Souled Store Gen-Z Jeans", category: "denim", brand: "The Souled Store", description: "Trend-led denim for relaxed contemporary outfits.", priceCents: 217500, source: "surplus_branded" },
+    { title: "G-Star Slim Fit Cargos", category: "cargos", brand: "G-Star RAW", description: "Utility-inspired slim cargos for everyday street style.", priceCents: 208500, source: "surplus_branded" },
+    { title: "Rare Rabbit Chinos", category: "cargos", brand: "Rare Rabbit", description: "Clean chinos suited to smart-casual occasions.", priceCents: 225000, source: "surplus_branded" },
+    { title: "Souled Store Shoes", category: "shoes", brand: "The Souled Store", description: "Statement casual footwear to complete the look.", priceCents: 255000, source: "surplus_branded" },
+    { title: "HRX Tracksuits", category: "activewear", brand: "HRX", description: "Sport-inspired matching sets for movement and comfort.", priceCents: 217500, source: "surplus_branded" },
+    { title: "Thrifted Jackets", category: "jackets", brand: null, description: "Handpicked pre-loved imported jackets. Each piece is unique.", priceCents: 49900, source: "thrifted_imported" },
+  ];
+
+  for (const p of retailProductSeeds) {
+    const slug = p.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+    const existing = await db.product.findUnique({ where: { slug } });
+    if (!existing) {
+      await db.product.create({
+        data: { ...p, slug, condition: "good", currency: "inr", quantity: 5 },
+      });
+    }
+  }
+
   console.log("Seed complete.");
 }
 

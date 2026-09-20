@@ -31,6 +31,8 @@ model User {
   artist          Artist?
   commissions     Commission[]
   reviews         Review[]
+  cart            Cart?
+  retailOrders    RetailOrder[]
 }
 
 model CustomerProfile {
@@ -315,15 +317,15 @@ model Order {
 // Stripe-specific reconciliation identifiers; nothing outside
 // src/lib/payments/ should need to know they're Stripe-shaped.
 model Payment {
-  id                       String    @id @default(cuid())
-  orderId                  String    @unique
-  order                    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  provider                 String    @default("manual")
-  amountCents              Int
-  status                   String    @default("pending")
-  providerSessionId        String?   @unique
-  providerPaymentIntentId  String?
-  paidAt                   DateTime?
+  id                      String    @id @default(cuid())
+  orderId                 String    @unique
+  order                   Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider                String    @default("manual")
+  amountCents             Int
+  status                  String    @default("pending")
+  providerSessionId       String?   @unique
+  providerPaymentIntentId String?
+  paidAt                  DateTime?
 
   createdAt DateTime @default(now())
 }
@@ -364,4 +366,139 @@ model Review {
   createdAt    DateTime   @default(now())
 
   @@index([customerId])
+}
+
+// ---------------------------------------------------------------------------
+// Retail — surplus branded stock + thrifted imported jackets, sold off the
+// shelf (not bespoke). Deliberately a parallel commerce domain rather than
+// folded into Commission -> Order -> Payment above: Order.commissionId is a
+// required, unique FK tightly coupled to the bespoke pipeline, and Prisma has
+// no clean polymorphic relations. RetailOrder/RetailPayment mirror
+// Order/Payment's shape instead, so the existing PaymentService interface and
+// the shared WebhookEvent idempotency table are reused as-is — only the
+// Stripe webhook handler's lookup gets a parallel branch (see
+// src/app/api/webhooks/stripe/route.ts).
+// ---------------------------------------------------------------------------
+
+// condition: "new" | "like_new" | "good" | "fair"
+// source: "surplus_branded" | "thrifted_imported"
+model Product {
+  id          String  @id @default(cuid())
+  title       String
+  slug        String  @unique
+  category    String // e.g. "shirts" | "t_shirts" | "denim" | "cargos" | "shoes" | "activewear" | "jackets"
+  brand       String?
+  description String
+  size        String?
+  condition   String  @default("good")
+  source      String
+  priceCents  Int
+  currency    String  @default("inr")
+  quantity    Int     @default(1)
+  active      Boolean @default(true)
+
+  images     ProductImage[]
+  cartItems  CartItem[]
+  orderItems RetailOrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([source])
+  @@index([active])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String?
+  order     Int     @default(0)
+
+  @@index([productId])
+}
+
+// One cart per signed-in customer. Guest (pre-login) carts aren't supported
+// yet — a v1 scope cut, not an oversight; adding one later is an additive
+// nullable sessionId column plus a merge-on-login step, not a redesign.
+model Cart {
+  id         String @id @default(cuid())
+  customerId String @unique
+  customer   User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+
+  createdAt DateTime @default(now())
+
+  @@unique([cartId, productId])
+  @@index([productId])
+}
+
+// status: "pending" | "paid" | "fulfilled" | "cancelled"
+// Mirrors Order above, for the retail domain.
+model RetailOrder {
+  id              String @id @default(cuid())
+  customerId      String
+  customer        User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status          String @default("pending")
+  subtotalCents   Int
+  currency        String @default("inr")
+  shippingAddress String
+
+  items   RetailOrderItem[]
+  payment RetailPayment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+}
+
+// Line items snapshot the product's title/price at purchase time so a later
+// edit to Product (price change, deletion) never retroactively rewrites a
+// past order's record — same append-only reasoning as ConceptVersion.
+model RetailOrderItem {
+  id                 String      @id @default(cuid())
+  retailOrderId      String
+  retailOrder        RetailOrder @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product     @relation(fields: [productId], references: [id])
+  titleSnapshot      String
+  priceCentsSnapshot Int
+  quantity           Int         @default(1)
+
+  @@index([retailOrderId])
+  @@index([productId])
+}
+
+// status: "pending" | "checkout_created" | "succeeded" | "failed" | "refunded"
+// Mirrors Payment above exactly, including its reuse of the shared
+// (provider, eventId) WebhookEvent idempotency table — only the FK target
+// differs (RetailOrder instead of Order).
+model RetailPayment {
+  id                      String      @id @default(cuid())
+  retailOrderId           String      @unique
+  retailOrder             RetailOrder @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+  provider                String      @default("manual")
+  amountCents             Int
+  status                  String      @default("pending")
+  providerSessionId       String?     @unique
+  providerPaymentIntentId String?
+  paidAt                  DateTime?
+
+  createdAt DateTime @default(now())
 }

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getPaymentService } from "@/lib/payments";
 import { emitPaymentEvent } from "@/lib/payments/types";
 import { markPaymentSucceeded } from "@/lib/admin/service";
+import { markRetailPaymentSucceeded } from "@/lib/retail/service";
 
 /**
  * Stripe webhook receiver — the ONLY place a payment is ever marked
@@ -82,9 +83,11 @@ async function handleCheckoutCompleted(event: {
     include: { order: { include: { commission: true } } },
   });
   if (!payment) {
-    // A session we have no record of — nothing to reconcile against. Not
-    // retried (200), just logged for investigation.
-    console.error("[payments] webhook referenced an unknown checkout session", { providerSessionId });
+    // Not a commission payment — check the parallel retail domain before
+    // giving up. Both tables key on the same provider-issued
+    // providerSessionId, so exactly one of them (or neither, for an unknown
+    // session) will ever match.
+    await handleRetailCheckoutCompleted(providerSessionId, event);
     return;
   }
   if (payment.status === "succeeded") {
@@ -159,5 +162,57 @@ async function handleCheckoutExpired(providerSessionId: string) {
   // already-succeeded payment if an expired event arrives out of order.
   if (payment && payment.status === "checkout_created") {
     await db.payment.update({ where: { id: payment.id }, data: { status: "pending" } });
+    return;
   }
+
+  const retailPayment = await db.retailPayment.findUnique({ where: { providerSessionId } });
+  if (retailPayment && retailPayment.status === "checkout_created") {
+    await db.retailPayment.update({ where: { id: retailPayment.id }, data: { status: "pending" } });
+  }
+}
+
+/** Retail-domain counterpart of handleCheckoutCompleted above — same
+ * amount/currency reconciliation discipline, against RetailOrder instead of
+ * Order/Commission. */
+async function handleRetailCheckoutCompleted(
+  providerSessionId: string,
+  event: { amountTotalCents: number | null; currency: string | null; providerPaymentIntentId: string | null },
+) {
+  const payment = await db.retailPayment.findUnique({
+    where: { providerSessionId },
+    include: { retailOrder: true },
+  });
+  if (!payment) {
+    console.error("[payments] webhook referenced an unknown checkout session", { providerSessionId });
+    return;
+  }
+  if (payment.status === "succeeded") return;
+
+  const order = payment.retailOrder;
+  const amountMatches = event.amountTotalCents === order.subtotalCents;
+  const currencyMatches = event.currency?.toLowerCase() === order.currency.toLowerCase();
+
+  if (!amountMatches || !currencyMatches) {
+    emitPaymentEvent({
+      name: "payment.webhook.reconciliation_failed",
+      detail: {
+        retailOrderId: order.id,
+        expectedAmountCents: order.subtotalCents,
+        expectedCurrency: order.currency,
+        webhookAmountCents: event.amountTotalCents ?? -1,
+        webhookCurrency: event.currency ?? "unknown",
+      },
+    });
+    console.error("[payments] retail amount/currency reconciliation failed — payment NOT marked succeeded", {
+      retailOrderId: order.id,
+      providerSessionId,
+    });
+    return;
+  }
+
+  await markRetailPaymentSucceeded(order.id, payment.id, {
+    provider: "stripe",
+    providerPaymentIntentId: event.providerPaymentIntentId,
+  });
+  emitPaymentEvent({ name: "payment.state.succeeded", detail: { retailOrderId: order.id } });
 }

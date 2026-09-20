@@ -49,6 +49,11 @@ export function conceptImageKey(ext: string): string {
   return `public/concepts/${assetId(ext)}`;
 }
 
+/** Retail shop product photos — public, namespaced by productId. */
+export function productImageKey(productId: string, ext: string): string {
+  return `public/products/${productId}/${assetId(ext)}`;
+}
+
 // Reserved for future phases (not implemented yet):
 //   public/passports/{passportId}/{assetId}            — published Art Passport photos
 //   public/garments/{garmentId}/models/{assetId}.glb    — Blender-authored GLB assets

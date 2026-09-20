@@ -1,0 +1,108 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { db } from "@/lib/db";
+import { formatPrice } from "@/lib/format";
+
+export const metadata: Metadata = {
+  title: "Shop",
+  description: "Surplus branded stock and handpicked thrifted imported jackets.",
+};
+
+const CATEGORIES: { value: string; label: string }[] = [
+  { value: "shirts", label: "Shirts" },
+  { value: "t_shirts", label: "T-Shirts" },
+  { value: "denim", label: "Denim" },
+  { value: "cargos", label: "Cargos & Chinos" },
+  { value: "shoes", label: "Shoes" },
+  { value: "activewear", label: "Activewear" },
+  { value: "jackets", label: "Jackets" },
+];
+
+export default async function ShopPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
+  const { category } = await searchParams;
+
+  const products = await db.product.findMany({
+    where: {
+      active: true,
+      ...(category ? { category } : {}),
+    },
+    include: { images: { orderBy: { order: "asc" }, take: 1 } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return (
+    <div className="container-editorial py-24">
+      <p className="label-eyebrow text-rust mb-4">Ease Wear / Shop</p>
+      <h1 className="font-display text-5xl max-w-2xl mb-6">Surplus finds. Thrifted one-offs.</h1>
+      <p className="max-w-xl text-ink/70 mb-10">
+        Branded overstock and handpicked pre-loved imported jackets — each in
+        limited quantity, first come first served. Looking for a bespoke
+        painted piece instead?{" "}
+        <Link href="/create" className="underline hover:text-rust">
+          Start a custom commission.
+        </Link>
+      </p>
+
+      <div className="flex flex-wrap gap-2 mb-12">
+        <Link
+          href="/shop"
+          className={`label-eyebrow text-xs border px-3 py-1.5 ${!category ? "border-ink bg-ink text-paper" : "border-line hover:border-rust hover:text-rust"}`}
+        >
+          All
+        </Link>
+        {CATEGORIES.map((c) => (
+          <Link
+            key={c.value}
+            href={`/shop?category=${c.value}`}
+            className={`label-eyebrow text-xs border px-3 py-1.5 ${category === c.value ? "border-ink bg-ink text-paper" : "border-line hover:border-rust hover:text-rust"}`}
+          >
+            {c.label}
+          </Link>
+        ))}
+      </div>
+
+      {products.length === 0 ? (
+        <div className="border border-dashed border-line py-20 text-center">
+          <p className="font-display text-xl mb-2">Nothing here yet.</p>
+          <p className="text-sm text-ink/60">Check back soon — stock updates regularly.</p>
+        </div>
+      ) : (
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {products.map((product) => (
+            <Link key={product.id} href={`/shop/${product.slug}`} className="group block">
+              <div className="aspect-[4/5] bg-paper-dim mb-3 overflow-hidden">
+                {product.images[0] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- remote/storage-hosted product photos, not a local static asset next/image can optimize without extra config
+                  <img
+                    src={product.images[0].url}
+                    alt={product.title}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-ink/30 text-xs uppercase tracking-widest">
+                    No photo yet
+                  </div>
+                )}
+              </div>
+              <p className="label-eyebrow text-ink/50 text-[10px] mb-1">{product.brand ?? product.category}</p>
+              <p className="font-display text-lg leading-tight">{product.title}</p>
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-sm text-ink/70">{formatPrice(product.priceCents, product.currency)}</p>
+                {product.quantity <= 2 && product.quantity > 0 && (
+                  <p className="text-[10px] uppercase tracking-widest text-rust">Only {product.quantity} left</p>
+                )}
+                {product.quantity === 0 && (
+                  <p className="text-[10px] uppercase tracking-widest text-ink/40">Sold out</p>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

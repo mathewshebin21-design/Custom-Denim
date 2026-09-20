@@ -21,6 +21,7 @@ export function SiteFooter() {
           <p className="label-eyebrow mb-4 text-ink/50">Studio</p>
           <ul className="space-y-2 text-sm">
             <li><Link href="/create" className="hover:text-rust">Custom Creation Studio</Link></li>
+            <li><Link href="/shop" className="hover:text-rust">Shop</Link></li>
             <li><Link href="/art" className="hover:text-rust">Explore the Art</Link></li>
             <li><Link href="/process" className="hover:text-rust">How It Works</Link></li>
             <li><Link href="/artists" className="hover:text-rust">Our Artists</Link></li>

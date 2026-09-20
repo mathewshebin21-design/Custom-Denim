@@ -3,7 +3,7 @@ import { LocalStorageProvider } from "./localProvider";
 import { S3StorageProvider, loadS3ConfigFromEnv } from "./s3Provider";
 
 export type { StorageService, StorageVisibility, PutObjectParams, HeadObjectResult } from "./types";
-export { referenceImageKey, productionPhotoKey } from "./objectKeys";
+export { referenceImageKey, productionPhotoKey, productImageKey } from "./objectKeys";
 
 let instance: StorageService | null = null;
 

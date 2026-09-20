@@ -15,7 +15,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith("/account") || pathname.startsWith("/create")) {
+  if (
+    pathname.startsWith("/account") ||
+    pathname.startsWith("/create") ||
+    pathname.startsWith("/cart") ||
+    pathname.startsWith("/shop/orders")
+  ) {
     if (!session) {
       const url = new URL("/login", request.url);
       url.searchParams.set("next", pathname);
@@ -27,5 +32,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/account/:path*", "/create/:path*", "/studio-3d-preview/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/account/:path*",
+    "/create/:path*",
+    "/studio-3d-preview/:path*",
+    "/cart/:path*",
+    "/shop/orders/:path*",
+  ],
 };

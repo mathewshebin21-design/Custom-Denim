@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/layout/MobileNav";
 
 const NAV_LINKS = [
   { href: "/create", label: "Studio" },
+  { href: "/shop", label: "Shop" },
   { href: "/art", label: "Art" },
   { href: "/process", label: "Process" },
   { href: "/artists", label: "Artists" },
@@ -55,6 +56,9 @@ export async function SiteHeader() {
               Sign In
             </Link>
           )}
+          <Link href="/cart" className="label-eyebrow text-ink/70 hover:text-rust">
+            Cart
+          </Link>
           <span className="hidden sm:inline-flex">
             <ButtonLink href="/create">Create Your Piece</ButtonLink>
           </span>
