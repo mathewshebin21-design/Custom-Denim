@@ -46,6 +46,27 @@ export default async function ArtistsPage() {
           );
         })}
       </div>
+
+      {/* Lightweight, no-application-form path for a new artist to reach
+          out — deliberately just an email prompt, not a signup flow, since
+          there's no self-service artist onboarding yet. See AGENTS.md/this
+          repo's history for why: this is the "first tiny step" version. */}
+      <div className="mt-16 border border-line p-8 sm:p-12 max-w-2xl">
+        <p className="label-eyebrow text-rust mb-4">Are You an Artist?</p>
+        <h2 className="font-display text-2xl mb-4">Show your talent to the world.</h2>
+        <p className="text-sm text-ink/70 mb-6">
+          If you paint, embroider, or otherwise hand-make wearable art and
+          want in, there&apos;s no application to fill out. Email us — we&apos;ll
+          assign you a first small project to try, and you&apos;re paid based
+          on what it sells for. No commitment beyond that first piece.
+        </p>
+        <a
+          href="mailto:easewear26@gmail.com?subject=I%27d%20like%20to%20create%20with%20Ease%20Wear"
+          className="label-eyebrow text-sm underline hover:text-rust"
+        >
+          easewear26@gmail.com →
+        </a>
+      </div>
     </div>
   );
 }
