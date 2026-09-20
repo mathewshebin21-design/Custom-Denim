@@ -1,0 +1,323 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+
+type AssistantAction =
+  | {
+      type: "create_product";
+      title: string;
+      category: string;
+      brand?: string;
+      description: string;
+      size?: string;
+      condition: string;
+      source: string;
+      priceCents: number;
+      currency: string;
+      quantity: number;
+    }
+  | {
+      type: "update_product";
+      id: string;
+      title?: string;
+      priceCents?: number;
+      currency?: string;
+      quantity?: number;
+      active?: boolean;
+    }
+  | { type: "delete_product"; id: string };
+
+type DisplayMessage =
+  | { id: string; role: "user"; text: string }
+  | { id: string; role: "assistant"; text: string }
+  | {
+      id: string;
+      role: "assistant";
+      kind: "proposal";
+      summary: string;
+      action: AssistantAction;
+      status: "pending" | "confirmed" | "cancelled" | "error";
+      errorText?: string;
+      // Set once a create_product proposal is confirmed, so the newly
+      // created product's id is on hand for the inline photo/video
+      // uploads below — there's no other way to attach media to a
+      // product that didn't exist until this exact confirm click.
+      createdProductId?: string;
+      mediaNote?: string;
+    };
+
+type ProposalMessage = Extract<DisplayMessage, { kind: "proposal" }>;
+
+function newId(): string {
+  return Math.random().toString(36).slice(2);
+}
+
+/**
+ * A floating chat widget on every /admin page (mounted once in
+ * AdminLayout). It can answer questions by reading real store data, and can
+ * propose catalog changes — but every proposal is a Confirm/Cancel step,
+ * not an immediate write. See src/lib/ai/adminAssistant.ts for the model
+ * side and src/app/api/admin/assistant/execute/route.ts for what actually
+ * runs a confirmed action (through the same validation as the manual UI).
+ */
+export function AdminAssistant() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    });
+  }
+
+  function historyFor(list: DisplayMessage[]): { role: "user" | "assistant"; text: string }[] {
+    return list.map((m) =>
+      m.role === "user"
+        ? { role: "user" as const, text: m.text }
+        : { role: "assistant" as const, text: "kind" in m ? `Proposed action: ${m.summary}` : m.text },
+    );
+  }
+
+  function updateMessage(id: string, patch: Partial<ProposalMessage>) {
+    setMessages((prev) => prev.map((m) => (m.id === id && "kind" in m ? { ...m, ...patch } : m)));
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput("");
+    setError(null);
+    const userMessage: DisplayMessage = { id: newId(), role: "user", text };
+    const next = [...messages, userMessage];
+    setMessages(next);
+    scrollToBottom();
+    setLoading(true);
+
+    const res = await fetch("/api/admin/assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: historyFor(next) }),
+    });
+    const body = await res.json().catch(() => ({}));
+    setLoading(false);
+
+    if (!res.ok) {
+      setError(body.error ?? "Something went wrong");
+      return;
+    }
+
+    if (body.kind === "proposal") {
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "assistant", kind: "proposal", summary: body.summary, action: body.action, status: "pending" },
+      ]);
+    } else {
+      setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: body.text }]);
+    }
+    scrollToBottom();
+  }
+
+  async function confirmProposal(id: string) {
+    const message = messages.find((m) => m.id === id);
+    if (!message || message.role !== "assistant" || !("kind" in message)) return;
+
+    const res = await fetch("/api/admin/assistant/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message.action),
+    });
+    const body = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      updateMessage(id, { status: "error", errorText: body.error ?? "Could not apply this change" });
+      return;
+    }
+    updateMessage(id, {
+      status: "confirmed",
+      createdProductId: message.action.type === "create_product" ? body.product?.id : undefined,
+    });
+  }
+
+  function cancelProposal(id: string) {
+    updateMessage(id, { status: "cancelled" });
+  }
+
+  async function attachPhoto(messageId: string, productId: string, file: File) {
+    updateMessage(messageId, { mediaNote: "Uploading photo…" });
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("productId", productId);
+    const uploadRes = await fetch("/api/admin/products/upload", { method: "POST", body: formData });
+    const uploadBody = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      updateMessage(messageId, { mediaNote: uploadBody.error ?? "Could not upload photo" });
+      return;
+    }
+    const attachRes = await fetch(`/api/admin/products/${productId}/images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: uploadBody.url }),
+    });
+    if (!attachRes.ok) {
+      const attachBody = await attachRes.json().catch(() => ({}));
+      updateMessage(messageId, { mediaNote: attachBody.error ?? "Could not attach photo" });
+      return;
+    }
+    updateMessage(messageId, { mediaNote: "Photo added." });
+  }
+
+  async function attachVideo(messageId: string, productId: string, file: File) {
+    updateMessage(messageId, { mediaNote: "Uploading video…" });
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("productId", productId);
+    const uploadRes = await fetch("/api/admin/products/upload-video", { method: "POST", body: formData });
+    const uploadBody = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      updateMessage(messageId, { mediaNote: uploadBody.error ?? "Could not upload video" });
+      return;
+    }
+    const patchRes = await fetch(`/api/admin/products/${productId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoUrl: uploadBody.url }),
+    });
+    if (!patchRes.ok) {
+      const patchBody = await patchRes.json().catch(() => ({}));
+      updateMessage(messageId, { mediaNote: patchBody.error ?? "Could not attach video" });
+      return;
+    }
+    updateMessage(messageId, { mediaNote: "Video added." });
+  }
+
+  return (
+    <div className="fixed bottom-6 right-6 z-40">
+      {open && (
+        <div className="mb-3 w-[22rem] max-w-[calc(100vw-3rem)] border border-line bg-paper shadow-xl flex flex-col" style={{ height: "28rem" }}>
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <p className="label-eyebrow text-ink/70">Admin Assistant</p>
+            <button onClick={() => setOpen(false)} className="text-ink/50 hover:text-rust text-sm" aria-label="Close">
+              ✕
+            </button>
+          </div>
+
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {messages.length === 0 && (
+              <p className="text-xs text-ink/50">
+                Ask about stock, sales, or orders — or tell me to add, edit, or remove a product. I&apos;ll show you the
+                exact change before anything is saved. New products can get photos and a video right after you confirm.
+              </p>
+            )}
+            {messages.map((m) => {
+              if (m.role === "user") {
+                return (
+                  <div key={m.id} className="ml-8 border border-line bg-paper-dim/40 px-3 py-2 text-sm">
+                    {m.text}
+                  </div>
+                );
+              }
+              if ("kind" in m) {
+                return (
+                  <div key={m.id} className="mr-4 border border-rust/50 px-3 py-3 text-sm">
+                    <p className="mb-3">{m.summary}</p>
+                    {m.status === "pending" && (
+                      <div className="flex gap-2">
+                        <Button onClick={() => confirmProposal(m.id)} className="text-xs px-3 py-1.5">
+                          Confirm
+                        </Button>
+                        <button
+                          onClick={() => cancelProposal(m.id)}
+                          className="label-eyebrow text-xs text-ink/50 hover:text-rust px-3 py-1.5"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {m.status === "confirmed" && (
+                      <div>
+                        <p className="text-xs text-ink/50 uppercase tracking-widest mb-2">Done</p>
+                        {m.action.type === "create_product" && m.createdProductId && (
+                          <div className="flex flex-wrap items-center gap-3 border-t border-line pt-2 mt-2">
+                            <label className="text-xs text-ink/50 hover:text-rust cursor-pointer uppercase tracking-widest">
+                              Add Photo
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file && m.createdProductId) attachPhoto(m.id, m.createdProductId, file);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                            <label className="text-xs text-ink/50 hover:text-rust cursor-pointer uppercase tracking-widest">
+                              Add Video
+                              <input
+                                type="file"
+                                accept="video/mp4,video/quicktime"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file && m.createdProductId) attachVideo(m.id, m.createdProductId, file);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                          </div>
+                        )}
+                        {m.mediaNote && <p className="text-xs text-ink/50 mt-2">{m.mediaNote}</p>}
+                      </div>
+                    )}
+                    {m.status === "cancelled" && (
+                      <p className="text-xs text-ink/50 uppercase tracking-widest">Cancelled</p>
+                    )}
+                    {m.status === "error" && <p className="text-xs text-rust">{m.errorText}</p>}
+                  </div>
+                );
+              }
+              return (
+                <div key={m.id} className="mr-4 text-sm text-ink/80 whitespace-pre-wrap">
+                  {m.text}
+                </div>
+              );
+            })}
+            {loading && <p className="text-xs text-ink/40">Thinking…</p>}
+          </div>
+
+          {error && <p className="px-4 pb-2 text-xs text-rust">{error}</p>}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send();
+            }}
+            className="flex gap-2 border-t border-line p-3"
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask or tell me what to change…"
+              className="flex-1 min-w-0 border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-rust"
+            />
+            <Button type="submit" disabled={loading} className="text-xs px-3">
+              Send
+            </Button>
+          </form>
+        </div>
+      )}
+
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="label-eyebrow text-xs bg-ink text-paper px-5 py-3 shadow-lg hover:bg-rust"
+      >
+        {open ? "Close" : "Assistant"}
+      </button>
+    </div>
+  );
+}

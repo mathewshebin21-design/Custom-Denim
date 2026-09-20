@@ -21,6 +21,7 @@ type Product = {
   quantity: number;
   active: boolean;
   images: ProductImage[];
+  videoUrl: string | null;
 };
 
 const CATEGORIES = ["shirts", "t_shirts", "denim", "cargos", "shoes", "activewear", "jackets"];
@@ -140,6 +141,19 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
     setProducts((prev) =>
       prev.map((p) => (p.id === productId ? { ...p, images: [...p.images, attachBody.image] } : p)),
     );
+  }
+
+  async function uploadVideo(productId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("productId", productId);
+    const uploadRes = await fetch("/api/admin/products/upload-video", { method: "POST", body: formData });
+    const uploadBody = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      setError(uploadBody.error ?? "Could not upload video");
+      return;
+    }
+    await patchProduct(productId, { videoUrl: uploadBody.url });
   }
 
   return (
@@ -298,6 +312,22 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) uploadImage(product.id, file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <label
+              className={`text-xs cursor-pointer uppercase tracking-widest ${product.videoUrl ? "text-rust" : "text-ink/50 hover:text-rust"}`}
+              title={product.videoUrl ? "Video attached — click to replace" : "Attach a video"}
+            >
+              Video
+              <input
+                type="file"
+                accept="video/mp4,video/quicktime"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadVideo(product.id, file);
                   e.target.value = "";
                 }}
               />

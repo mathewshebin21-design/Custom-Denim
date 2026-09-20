@@ -33,14 +33,24 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="container-editorial py-24 grid gap-12 lg:grid-cols-2">
-      <div className="aspect-[4/5] bg-paper-dim">
-        {product.images[0] ? (
-          // eslint-disable-next-line @next/next/no-img-element -- storage-hosted product photo
-          <img src={product.images[0].url} alt={product.title} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-ink/30 text-xs uppercase tracking-widest">
-            No photo yet
-          </div>
+      <div>
+        <div className="aspect-[4/5] bg-paper-dim">
+          {product.images[0] ? (
+            // eslint-disable-next-line @next/next/no-img-element -- storage-hosted product photo
+            <img src={product.images[0].url} alt={product.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-ink/30 text-xs uppercase tracking-widest">
+              No photo yet
+            </div>
+          )}
+        </div>
+        {/* Product videos are watched, not ambient background — controls
+            rather than the autoplay/loop/mute convention used for the
+            site's other, decorative footage. */}
+        {product.videoUrl && (
+          <video controls playsInline className="mt-4 w-full bg-paper-dim">
+            <source src={product.videoUrl} type="video/mp4" />
+          </video>
         )}
       </div>
 

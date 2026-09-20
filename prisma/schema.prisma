@@ -396,6 +396,7 @@ model Product {
   currency    String  @default("inr")
   quantity    Int     @default(1)
   active      Boolean @default(true)
+  videoUrl    String? // optional single product demo/detail clip, shown on the product page alongside photos
 
   images     ProductImage[]
   cartItems  CartItem[]

@@ -54,6 +54,11 @@ export function productImageKey(productId: string, ext: string): string {
   return `public/products/${productId}/${assetId(ext)}`;
 }
 
+/** A single retail shop product demo/detail video — public, namespaced by productId. */
+export function productVideoKey(productId: string, ext: string): string {
+  return `public/products/${productId}/video/${assetId(ext)}`;
+}
+
 // Reserved for future phases (not implemented yet):
 //   public/passports/{passportId}/{assetId}            — published Art Passport photos
 //   public/garments/{garmentId}/models/{assetId}.glb    — Blender-authored GLB assets

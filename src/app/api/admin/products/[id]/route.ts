@@ -15,6 +15,7 @@ const UpdateProductSchema = z.object({
   currency: z.string().min(1).optional(),
   quantity: z.number().int().min(0).optional(),
   active: z.boolean().optional(),
+  videoUrl: z.string().min(1).optional(),
 });
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/admin/products/[id]">) {

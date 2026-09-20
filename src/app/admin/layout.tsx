@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/guards";
+import { AdminAssistant } from "@/components/admin/AdminAssistant";
 
 // src/proxy.ts already redirects unauthenticated/non-admin requests away
 // from /admin/*, but that is the only line of defense unless every page
@@ -19,6 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </div>
       {children}
+      <AdminAssistant />
     </div>
   );
 }

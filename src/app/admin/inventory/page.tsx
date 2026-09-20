@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/guards";
+import { getInventoryOverview, LOW_STOCK_THRESHOLD } from "@/lib/retail/service";
 import { formatPrice } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Inventory — Admin" };
-
-const LOW_STOCK_THRESHOLD = 2;
 
 const CATEGORY_LABELS: Record<string, string> = {
   shirts: "Shirts",
@@ -17,85 +15,27 @@ const CATEGORY_LABELS: Record<string, string> = {
   jackets: "Jackets",
 };
 
-// Every money figure here is grouped by its own currency rather than summed
-// into one number — products (and their orders) aren't all necessarily
-// priced in the same currency now that admins can set it per product, and
-// silently blending currencies into a single total would just be wrong.
-function sumByCurrency(rows: { currency: string; amountCents: number }[]): [string, number][] {
-  const totals = new Map<string, number>();
-  for (const row of rows) {
-    totals.set(row.currency, (totals.get(row.currency) ?? 0) + row.amountCents);
-  }
-  return [...totals.entries()].sort((a, b) => b[1] - a[1]);
-}
-
-function formatByCurrency(rows: { currency: string; amountCents: number }[]): string {
-  const totals = sumByCurrency(rows);
-  if (totals.length === 0) return formatPrice(0, "inr");
-  return totals.map(([currency, cents]) => formatPrice(cents, currency)).join(" + ");
+function formatByCurrency(rows: [string, number][]): string {
+  if (rows.length === 0) return formatPrice(0, "inr");
+  return rows.map(([currency, cents]) => formatPrice(cents, currency)).join(" + ");
 }
 
 export default async function AdminInventoryPage() {
   await requireAdmin();
 
-  const [products, succeededPayments] = await Promise.all([
-    db.product.findMany({ orderBy: [{ category: "asc" }, { quantity: "asc" }] }),
-    db.retailPayment.findMany({
-      where: { status: "succeeded" },
-      include: { retailOrder: { include: { items: true } } },
-    }),
-  ]);
-
-  const totalSkus = products.length;
-  const totalUnitsInStock = products.reduce((sum, p) => sum + p.quantity, 0);
-  const outOfStock = products.filter((p) => p.quantity === 0);
-  const lowStock = products.filter((p) => p.quantity > 0 && p.quantity <= LOW_STOCK_THRESHOLD);
-  const needsAttention = [...outOfStock, ...lowStock];
-
-  const stockValueRows = products.map((p) => ({ currency: p.currency, amountCents: p.priceCents * p.quantity }));
-
-  const retailOrdersCount = succeededPayments.length;
-  const unitsSold = succeededPayments.reduce(
-    (sum, p) => sum + p.retailOrder.items.reduce((s, i) => s + i.quantity, 0),
-    0,
-  );
-  // Payments carry the amount actually charged; the order's own currency is
-  // used since RetailPayment doesn't duplicate that field.
-  const revenueRows = succeededPayments.map((p) => ({ currency: p.retailOrder.currency, amountCents: p.amountCents }));
-  const revenueTotals = sumByCurrency(revenueRows);
-  const aovByCurrency = revenueTotals.map(
-    ([currency, cents]) => [currency, retailOrdersCount ? Math.round(cents / retailOrdersCount) : 0] as const,
-  );
+  const overview = await getInventoryOverview();
+  const needsAttention = [...overview.outOfStock, ...overview.lowStock];
 
   const stats = [
-    { label: "SKUs", value: String(totalSkus) },
-    { label: "Units In Stock", value: String(totalUnitsInStock) },
-    { label: "Stock Value (Retail)", value: formatByCurrency(stockValueRows) },
-    { label: "Out of Stock", value: String(outOfStock.length) },
-    { label: "Low Stock (≤2)", value: String(lowStock.length) },
-    { label: "Units Sold", value: String(unitsSold) },
-    { label: "Retail Revenue", value: formatByCurrency(revenueRows) },
-    {
-      label: "Retail AOV",
-      value: aovByCurrency.length
-        ? aovByCurrency.map(([currency, cents]) => formatPrice(cents, currency)).join(" + ")
-        : formatPrice(0, "inr"),
-    },
+    { label: "SKUs", value: String(overview.totalSkus) },
+    { label: "Units In Stock", value: String(overview.totalUnitsInStock) },
+    { label: "Stock Value (Retail)", value: formatByCurrency(overview.stockValueByCurrency) },
+    { label: "Out of Stock", value: String(overview.outOfStock.length) },
+    { label: `Low Stock (≤${LOW_STOCK_THRESHOLD})`, value: String(overview.lowStock.length) },
+    { label: "Units Sold", value: String(overview.unitsSold) },
+    { label: "Retail Revenue", value: formatByCurrency(overview.revenueByCurrency) },
+    { label: "Retail AOV", value: formatByCurrency(overview.aovByCurrency) },
   ];
-
-  const byCategory = Object.entries(
-    products.reduce<Record<string, { count: number; units: number; valueRows: { currency: string; amountCents: number }[] }>>(
-      (acc, p) => {
-        const bucket = acc[p.category] ?? { count: 0, units: 0, valueRows: [] };
-        bucket.count += 1;
-        bucket.units += p.quantity;
-        bucket.valueRows.push({ currency: p.currency, amountCents: p.priceCents * p.quantity });
-        acc[p.category] = bucket;
-        return acc;
-      },
-      {},
-    ),
-  ).sort((a, b) => b[1].units - a[1].units);
 
   return (
     <div className="container-editorial py-16">
@@ -136,22 +76,22 @@ export default async function AdminInventoryPage() {
 
       <h2 className="font-display text-2xl mb-6">By Category</h2>
       <div className="divide-y divide-line border-t border-b border-line mb-16">
-        {byCategory.map(([category, data]) => (
-          <div key={category} className="flex items-center justify-between py-3">
-            <p className="font-semibold">{CATEGORY_LABELS[category] ?? category}</p>
+        {overview.byCategory.map((data) => (
+          <div key={data.category} className="flex items-center justify-between py-3">
+            <p className="font-semibold">{CATEGORY_LABELS[data.category] ?? data.category}</p>
             <div className="flex items-center gap-8 text-sm text-ink/60">
               <span>{data.count} SKUs</span>
               <span>{data.units} units</span>
-              <span className="min-w-28 text-right">{formatByCurrency(data.valueRows)}</span>
+              <span className="min-w-28 text-right">{formatByCurrency(data.valueByCurrency)}</span>
             </div>
           </div>
         ))}
-        {byCategory.length === 0 && <p className="py-12 text-center text-ink/50">No products yet.</p>}
+        {overview.byCategory.length === 0 && <p className="py-12 text-center text-ink/50">No products yet.</p>}
       </div>
 
       <h2 className="font-display text-2xl mb-6">All Products</h2>
       <div className="divide-y divide-line border-t border-b border-line">
-        {products.map((p) => (
+        {overview.products.map((p) => (
           <div key={p.id} className="flex items-center justify-between py-3 gap-4">
             <div className="min-w-0">
               <p className="font-semibold truncate">{p.title}</p>
@@ -179,7 +119,7 @@ export default async function AdminInventoryPage() {
             </div>
           </div>
         ))}
-        {products.length === 0 && <p className="py-12 text-center text-ink/50">No products yet.</p>}
+        {overview.products.length === 0 && <p className="py-12 text-center text-ink/50">No products yet.</p>}
       </div>
     </div>
   );

@@ -248,6 +248,7 @@ export type CreateProductInput = {
   currency?: string;
   quantity: number;
   imageUrls: string[];
+  videoUrl?: string;
 };
 
 export async function createProduct(input: CreateProductInput) {
@@ -267,6 +268,7 @@ export async function createProduct(input: CreateProductInput) {
       priceCents: input.priceCents,
       currency: input.currency ?? "inr",
       quantity: input.quantity,
+      videoUrl: input.videoUrl,
       images: { create: input.imageUrls.map((url, order) => ({ url, order })) },
     },
     include: { images: true },
@@ -302,4 +304,91 @@ export async function listRetailOrdersForAdmin() {
     orderBy: { createdAt: "desc" },
     include: { customer: true, items: true, payment: true },
   });
+}
+
+// -----------------------------------------------------------------------
+// Reporting — shared by the /admin/inventory dashboard and the admin AI
+// assistant's read tools, so both ever compute these numbers exactly once.
+// -----------------------------------------------------------------------
+
+export const LOW_STOCK_THRESHOLD = 2;
+
+type CurrencyAmount = { currency: string; amountCents: number };
+
+// Every money figure is grouped by its own currency rather than summed into
+// one number — products (and their orders) aren't all necessarily priced in
+// the same currency now that admins can set it per product, and silently
+// blending currencies into a single total would just be wrong.
+function sumByCurrency(rows: CurrencyAmount[]): [string, number][] {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    totals.set(row.currency, (totals.get(row.currency) ?? 0) + row.amountCents);
+  }
+  return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([currency, cents]) => [currency, cents]);
+}
+
+export async function getInventoryOverview() {
+  const [products, succeededPayments] = await Promise.all([
+    db.product.findMany({ orderBy: [{ category: "asc" }, { quantity: "asc" }] }),
+    db.retailPayment.findMany({
+      where: { status: "succeeded" },
+      include: { retailOrder: { include: { items: true } } },
+    }),
+  ]);
+
+  const outOfStock = products.filter((p) => p.quantity === 0);
+  const lowStock = products.filter((p) => p.quantity > 0 && p.quantity <= LOW_STOCK_THRESHOLD);
+
+  const stockValueByCurrency = sumByCurrency(
+    products.map((p) => ({ currency: p.currency, amountCents: p.priceCents * p.quantity })),
+  );
+
+  const retailOrdersCount = succeededPayments.length;
+  const unitsSold = succeededPayments.reduce(
+    (sum, p) => sum + p.retailOrder.items.reduce((s, i) => s + i.quantity, 0),
+    0,
+  );
+  // Payments carry the amount actually charged; the order's own currency is
+  // used since RetailPayment doesn't duplicate that field.
+  const revenueByCurrency = sumByCurrency(
+    succeededPayments.map((p) => ({ currency: p.retailOrder.currency, amountCents: p.amountCents })),
+  );
+  const aovByCurrency: [string, number][] = revenueByCurrency.map(([currency, cents]) => [
+    currency,
+    retailOrdersCount ? Math.round(cents / retailOrdersCount) : 0,
+  ]);
+
+  const byCategoryMap = products.reduce<Record<string, { count: number; units: number; valueRows: CurrencyAmount[] }>>(
+    (acc, p) => {
+      const bucket = acc[p.category] ?? { count: 0, units: 0, valueRows: [] };
+      bucket.count += 1;
+      bucket.units += p.quantity;
+      bucket.valueRows.push({ currency: p.currency, amountCents: p.priceCents * p.quantity });
+      acc[p.category] = bucket;
+      return acc;
+    },
+    {},
+  );
+  const byCategory = Object.entries(byCategoryMap)
+    .map(([category, data]) => ({
+      category,
+      count: data.count,
+      units: data.units,
+      valueByCurrency: sumByCurrency(data.valueRows),
+    }))
+    .sort((a, b) => b.units - a.units);
+
+  return {
+    products,
+    totalSkus: products.length,
+    totalUnitsInStock: products.reduce((sum, p) => sum + p.quantity, 0),
+    outOfStock,
+    lowStock,
+    stockValueByCurrency,
+    retailOrdersCount,
+    unitsSold,
+    revenueByCurrency,
+    aovByCurrency,
+    byCategory,
+  };
 }

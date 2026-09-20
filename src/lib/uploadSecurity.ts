@@ -44,3 +44,25 @@ export function detectImageExtension(bytes: Buffer): "png" | "jpg" | "webp" | nu
 
   return null;
 }
+
+/**
+ * Same magic-bytes approach as detectImageExtension, for the one video
+ * format the rest of the app already standardizes on (see the ffmpeg
+ * re-encode convention used for every other video asset in public/video/).
+ * An MP4/MOV (ISO base media) file has an "ftyp" box starting at byte 4,
+ * regardless of the specific brand — checking that box, not a declared
+ * Content-Type or filename extension, is what actually confirms the bytes
+ * are a real ISO-BMFF container.
+ */
+export function detectVideoExtension(bytes: Buffer): "mp4" | null {
+  if (
+    bytes.length >= 12 &&
+    bytes[4] === 0x66 && // f
+    bytes[5] === 0x74 && // t
+    bytes[6] === 0x79 && // y
+    bytes[7] === 0x70 // p
+  ) {
+    return "mp4";
+  }
+  return null;
+}
