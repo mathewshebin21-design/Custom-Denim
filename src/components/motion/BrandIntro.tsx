@@ -61,7 +61,7 @@ export function BrandIntro() {
     <AnimatePresence>
       {visible && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-paper"
+          className="fixed inset-0 z-50 bg-paper"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.6, ease: "easeInOut" }}
@@ -75,7 +75,7 @@ export function BrandIntro() {
             playsInline
             onEnded={dismiss}
             onError={dismiss}
-            className="h-full max-h-screen w-auto object-contain"
+            className="h-full w-full object-cover"
           />
           <button
             type="button"
