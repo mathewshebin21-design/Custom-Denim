@@ -100,7 +100,7 @@ export function CartView({ initialCart }: { initialCart: Cart }) {
           <div key={item.id} className="flex items-center gap-4 py-6">
             <div className="h-20 w-16 bg-paper-dim flex-shrink-0 relative overflow-hidden">
               {item.product.images[0] && (
-                <Image src={item.product.images[0].url} alt={item.product.title} fill className="object-cover" />
+                <Image src={item.product.images[0].url} alt={item.product.title} fill sizes="64px" className="object-cover" />
               )}
             </div>
             <div className="flex-1">

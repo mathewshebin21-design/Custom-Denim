@@ -229,7 +229,7 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
           <div key={product.id} className="flex items-center gap-4 py-4">
             <div className="h-16 w-14 bg-paper-dim flex-shrink-0 relative overflow-hidden">
               {product.images[0] && (
-                <Image src={product.images[0].url} alt={product.title} fill className="object-cover" />
+                <Image src={product.images[0].url} alt={product.title} fill sizes="56px" className="object-cover" />
               )}
             </div>
             <div className="flex-1 min-w-0">

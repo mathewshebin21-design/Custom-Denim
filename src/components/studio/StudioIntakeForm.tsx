@@ -83,7 +83,13 @@ export function StudioIntakeForm({ garments }: { garments: Garment[] }) {
             >
               {g.imageUrl && (
                 <div className="relative aspect-square bg-paper-dim">
-                  <Image src={g.imageUrl} alt={g.label} fill className="object-cover" />
+                  <Image
+                    src={g.imageUrl}
+                    alt={g.label}
+                    fill
+                    sizes="(min-width: 640px) 25vw, 50vw"
+                    className="object-cover"
+                  />
                 </div>
               )}
               <div className="p-4">

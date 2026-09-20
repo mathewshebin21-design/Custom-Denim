@@ -2,6 +2,8 @@ import Image from "next/image";
 import { db } from "@/lib/db";
 import { ButtonLink } from "@/components/ui/Button";
 import { PieceCard } from "@/components/art/PieceCard";
+import { BrandIntro } from "@/components/motion/BrandIntro";
+import { ScrollReveal } from "@/components/motion/ScrollReveal";
 
 async function getFeaturedPieces() {
   const artworks = await db.artwork.findMany({
@@ -22,8 +24,12 @@ export default async function HomePage() {
 
   return (
     <>
+      {/* One-shot cinematic front door — see BrandIntro.tsx. Renders nothing
+          under prefers-reduced-motion or once already seen this session. */}
+      <BrandIntro />
+
       {/* Hero */}
-      <section className="relative overflow-hidden border-b border-line">
+      <ScrollReveal as="section" className="relative overflow-hidden border-b border-line">
         <div className="absolute inset-0 bg-gradient-to-br from-denim/20 via-transparent to-rust/20" />
         <div className="container-editorial relative py-28 md:py-40">
           <p className="label-eyebrow text-rust mb-6">AI-Designed. Artist-Made. One-of-One.</p>
@@ -41,10 +47,10 @@ export default async function HomePage() {
             </ButtonLink>
           </div>
         </div>
-      </section>
+      </ScrollReveal>
 
       {/* How it works */}
-      <section className="container-editorial py-24 border-b border-line">
+      <ScrollReveal as="section" className="container-editorial py-24 border-b border-line">
         <p className="label-eyebrow text-ink/50 mb-4">How It Works</p>
         <div className="grid gap-12 md:grid-cols-3">
           <div>
@@ -75,10 +81,10 @@ export default async function HomePage() {
             </p>
           </div>
         </div>
-      </section>
+      </ScrollReveal>
 
       {/* AI + Artist positioning */}
-      <section className="container-editorial py-24 border-b border-line grid gap-12 md:grid-cols-2">
+      <ScrollReveal as="section" className="container-editorial py-24 border-b border-line grid gap-12 md:grid-cols-2">
         <div>
           <p className="label-eyebrow text-denim mb-4">The AI</p>
           <h3 className="font-display text-2xl mb-4">Your Creative Director</h3>
@@ -100,15 +106,19 @@ export default async function HomePage() {
             designs the direction; the artist creates the object.
           </p>
         </div>
-      </section>
+      </ScrollReveal>
 
       {/* Custom jacket showcase — a real, hand-painted piece, not a mockup */}
-      <section className="container-editorial py-24 border-b border-line grid gap-12 md:grid-cols-2 md:items-center">
+      <ScrollReveal
+        as="section"
+        className="container-editorial py-24 border-b border-line grid gap-12 md:grid-cols-2 md:items-center"
+      >
         <div className="relative aspect-[4/5] bg-paper-dim">
           <Image
             src="/jackets/denim-jacket-joker-back-angle.webp"
             alt="Hand-painted denim jacket, back panel"
             fill
+            sizes="(min-width: 768px) 50vw, 100vw"
             className="object-cover"
           />
         </div>
@@ -123,10 +133,10 @@ export default async function HomePage() {
           </p>
           <ButtonLink href="/create">Start Your Custom Jacket</ButtonLink>
         </div>
-      </section>
+      </ScrollReveal>
 
       {/* Featured pieces */}
-      <section className="container-editorial py-24">
+      <ScrollReveal as="section" className="container-editorial py-24">
         <div className="flex items-end justify-between mb-10">
           <div>
             <p className="label-eyebrow text-ink/50 mb-4">Recently Completed</p>
@@ -160,19 +170,19 @@ export default async function HomePage() {
             ))}
           </div>
         )}
-      </section>
+      </ScrollReveal>
 
       {/* Closing CTA — a charcoal accent band, not a full light/dark
           inversion: on the old light-page palette, inverting to bg-ink
           (dark) read as a deliberate dark contrast band, but with ink/paper
           now themselves inverted (see globals.css), that same inversion
           flipped into a jarring cream band on an otherwise all-dark page. */}
-      <section className="border-t border-line bg-paper-dim">
+      <ScrollReveal as="section" className="border-t border-line bg-paper-dim">
         <div className="container-editorial py-24 text-center">
           <h2 className="font-display text-4xl mb-6">Ready to wear your story?</h2>
           <ButtonLink href="/create">Create Your Piece</ButtonLink>
         </div>
-      </section>
+      </ScrollReveal>
     </>
   );
 }
