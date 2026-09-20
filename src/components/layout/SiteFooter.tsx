@@ -1,17 +1,13 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export function SiteFooter() {
   return (
     <footer className="border-t border-line mt-auto">
       <div className="container-editorial py-14 grid gap-10 md:grid-cols-4">
         <div className="md:col-span-2">
-          <div className="flex flex-col items-start gap-0.5 mb-4">
-            {/* Stacked lockup, matching SiteHeader.tsx — wordmark directly
-                under the monogram, not beside it. */}
-            {/* eslint-disable-next-line @next/next/no-img-element -- see SiteHeader.tsx */}
-            <img src="/brand/ease-wear-mark.svg" alt="" width={26} height={26} />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/ease-wear-wordmark.svg" alt="Ease Wear" width={76} height={24} />
+          <div className="mb-4">
+            <Image src="/brand/ease-wear-lockup.png" alt="Ease Wear" width={47} height={40} />
           </div>
           <p className="text-sm text-ink/70 max-w-sm">
             AI-designed. Artist-made. One-of-one. A wearable-art studio where

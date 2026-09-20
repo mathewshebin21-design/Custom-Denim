@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getSession } from "@/lib/auth/session";
 import { ButtonLink } from "@/components/ui/Button";
 import { SignOutButton } from "@/components/auth/SignOutButton";
@@ -18,17 +19,11 @@ export async function SiteHeader() {
   return (
     <header className="relative border-b border-line">
       <div className="container-editorial flex h-20 items-center justify-between">
-        <Link href="/" className="flex flex-col items-center gap-0.5 whitespace-nowrap">
-          {/* Stacked lockup — the wordmark sits directly under the monogram,
-              matching the studio's actual logo (icon on top, "EASE WEAR"
-              centered beneath it), not a side-by-side arrangement. */}
-          {/* eslint-disable-next-line @next/next/no-img-element -- static vector
-              logo assets; next/image's optimizer doesn't serve local SVGs
-              without enabling dangerouslyAllowSVG, not worth it for two
-              small, fully-trusted, self-authored vector files */}
-          <img src="/brand/ease-wear-mark.svg" alt="" width={30} height={30} />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/ease-wear-wordmark.svg" alt="Ease Wear" width={88} height={28} />
+        <Link href="/" className="whitespace-nowrap">
+          {/* The real studio logo (extracted from the animated intro reveal),
+              not a placeholder — a single pre-composed lockup rather than a
+              separately stacked icon + wordmark. */}
+          <Image src="/brand/ease-wear-lockup.png" alt="Ease Wear" width={62} height={52} priority />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
