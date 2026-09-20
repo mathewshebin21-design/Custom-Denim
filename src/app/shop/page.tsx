@@ -37,9 +37,13 @@ export default async function ShopPage({
 
   return (
     <div>
-      {/* Real footage from the Ease Wear surplus drop — not a stock/AI
-          clip — autoplaying muted/looped as a hero banner, same as any
-          storefront's own promo reel. */}
+      {/* Real footage — a walkthrough of the actual Ease Wear store, not a
+          stock/AI clip — autoplaying muted/looped as a hero banner. Ends on
+          the "eW EASE WEAR" sign, which sits in the top third of the source
+          frame; object-position: top (rather than the default center) keeps
+          object-cover's crop entirely below the sign on wide viewports
+          instead of slicing through it, while still centering horizontally
+          when a narrow/portrait viewport crops the sides instead. */}
       <div className="relative h-[70vh] max-h-[720px] w-full overflow-hidden bg-paper-dim">
         <video
           src="/video/shop-surplus-drop.mp4"
@@ -48,7 +52,7 @@ export default async function ShopPage({
           muted
           loop
           playsInline
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover object-top"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-paper via-transparent to-transparent" />
       </div>
