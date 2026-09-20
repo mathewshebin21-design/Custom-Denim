@@ -28,9 +28,23 @@ export default async function HomePage() {
           under prefers-reduced-motion or once already seen this session. */}
       <BrandIntro />
 
-      {/* Hero */}
+      {/* Hero — real footage of an actual commissioned piece being worn,
+          not a stock clip, behind the "Wear your story" copy. A left-to-
+          right scrim keeps the text legible against the video's own
+          (often light) background rather than dimming the whole frame. */}
       <ScrollReveal as="section" className="relative overflow-hidden border-b border-line">
-        <div className="absolute inset-0 bg-gradient-to-br from-denim/20 via-transparent to-rust/20" />
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          poster="/video/hero-model-poster.jpg"
+          className="absolute inset-0 h-full w-full object-cover"
+        >
+          <source src="/video/hero-model.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-gradient-to-r from-paper via-paper/75 to-paper/20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-paper via-transparent to-transparent" />
         <div className="container-editorial relative py-28 md:py-40">
           <p className="label-eyebrow text-rust mb-6">AI-Designed. Artist-Made. One-of-One.</p>
           <h1 className="font-display text-5xl md:text-7xl leading-[1.05] max-w-4xl">
