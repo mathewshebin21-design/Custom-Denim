@@ -138,13 +138,15 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* Closing CTA */}
-      <section className="border-t border-line bg-ink text-paper">
+      {/* Closing CTA — a charcoal accent band, not a full light/dark
+          inversion: on the old light-page palette, inverting to bg-ink
+          (dark) read as a deliberate dark contrast band, but with ink/paper
+          now themselves inverted (see globals.css), that same inversion
+          flipped into a jarring cream band on an otherwise all-dark page. */}
+      <section className="border-t border-line bg-paper-dim">
         <div className="container-editorial py-24 text-center">
           <h2 className="font-display text-4xl mb-6">Ready to wear your story?</h2>
-          <ButtonLink href="/create" className="!bg-paper !text-ink hover:!bg-rust hover:!text-paper">
-            Create Your Piece
-          </ButtonLink>
+          <ButtonLink href="/create">Create Your Piece</ButtonLink>
         </div>
       </section>
     </>
