@@ -2,12 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Button } from "@/components/ui/Button";
 import { TagInput } from "@/components/studio/TagInput";
 import { ReferenceUploader } from "@/components/studio/ReferenceUploader";
 import { formatPrice } from "@/lib/format";
 
-type Garment = { id: string; type: string; label: string; description: string; basePriceCents: number };
+type Garment = {
+  id: string;
+  type: string;
+  label: string;
+  description: string;
+  basePriceCents: number;
+  imageUrl: string | null;
+};
 
 const BUDGET_TIERS = [
   { label: "Essential", cents: 30000 },
@@ -69,14 +77,21 @@ export function StudioIntakeForm({ garments }: { garments: Garment[] }) {
               type="button"
               key={g.id}
               onClick={() => setGarmentId(g.id)}
-              className={`border p-4 text-left text-sm transition-colors ${
+              className={`border text-left text-sm transition-colors overflow-hidden ${
                 garmentId === g.id ? "border-ink bg-ink text-paper" : "border-line hover:border-rust"
               }`}
             >
-              <p className="font-semibold">{g.label}</p>
-              <p className={`text-xs mt-1 ${garmentId === g.id ? "text-paper/70" : "text-ink/50"}`}>
-                From {formatPrice(g.basePriceCents)}
-              </p>
+              {g.imageUrl && (
+                <div className="relative aspect-square bg-paper-dim">
+                  <Image src={g.imageUrl} alt={g.label} fill className="object-cover" />
+                </div>
+              )}
+              <div className="p-4">
+                <p className="font-semibold">{g.label}</p>
+                <p className={`text-xs mt-1 ${garmentId === g.id ? "text-paper/70" : "text-ink/50"}`}>
+                  From {formatPrice(g.basePriceCents)}
+                </p>
+              </div>
             </button>
           ))}
         </div>

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { db } from "@/lib/db";
 import { ButtonLink } from "@/components/ui/Button";
 import { PieceCard } from "@/components/art/PieceCard";
@@ -98,6 +99,29 @@ export default async function HomePage() {
             painting, embroidering, and finishing every detail by hand. AI
             designs the direction; the artist creates the object.
           </p>
+        </div>
+      </section>
+
+      {/* Custom jacket showcase — a real, hand-painted piece, not a mockup */}
+      <section className="container-editorial py-24 border-b border-line grid gap-12 md:grid-cols-2 md:items-center">
+        <div className="relative aspect-[4/5] bg-paper-dim">
+          <Image
+            src="/jackets/denim-jacket-joker-back-angle.webp"
+            alt="Hand-painted denim jacket, back panel"
+            fill
+            className="object-cover"
+          />
+        </div>
+        <div>
+          <p className="label-eyebrow text-rust mb-4">Denim With Character</p>
+          <h2 className="font-display text-3xl mb-4">Hand-painted, not printed.</h2>
+          <p className="text-sm text-ink/70 mb-8 max-w-md">
+            This is real work from the studio — a full back-panel piece,
+            painted by hand onto a real jacket, start to finish. Every
+            custom commission follows the same path: your story, a concept
+            you approve, then an artist&apos;s hands on the actual garment.
+          </p>
+          <ButtonLink href="/create">Start Your Custom Jacket</ButtonLink>
         </div>
       </section>
 

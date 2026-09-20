@@ -72,6 +72,7 @@ async function main() {
       label: "Denim Jacket",
       description: "Classic trucker silhouette, the studio's signature canvas for full back-panel artwork.",
       basePriceCents: 42000,
+      imageUrl: "/jackets/denim-jacket-joker-back.webp",
     },
     {
       type: "jeans",
@@ -97,6 +98,10 @@ async function main() {
     const existing = await db.garment.findFirst({ where: { type: g.type } });
     if (!existing) {
       await db.garment.create({ data: g });
+    } else if (!existing.imageUrl && g.imageUrl) {
+      // Backfills a photo onto a garment row seeded before real product
+      // photography existed — never overwrites an admin-set imageUrl.
+      await db.garment.update({ where: { id: existing.id }, data: { imageUrl: g.imageUrl } });
     }
   }
 
