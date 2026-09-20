@@ -46,8 +46,8 @@ export default async function ShopPage({
           when a narrow/portrait viewport crops the sides instead. */}
       <div className="relative h-[70vh] max-h-[720px] w-full overflow-hidden bg-paper-dim">
         <video
-          src="/video/shop-surplus-drop.mp4"
-          poster="/video/shop-surplus-drop-poster.jpg"
+          src="/video/shop-store-walkthrough.mp4"
+          poster="/video/shop-store-walkthrough-poster.jpg"
           autoPlay
           muted
           loop
