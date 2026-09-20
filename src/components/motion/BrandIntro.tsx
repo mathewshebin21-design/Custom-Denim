@@ -7,13 +7,13 @@ const SESSION_KEY = "ease-wear-intro-seen";
 
 /**
  * A one-shot cinematic front door for the homepage: the studio's own
- * brand-story cut (real footage, not a synthesized animation) plays
+ * animated logo reveal (real footage, not a synthesized animation) plays
  * full-screen, then fades away into the page. Gated by sessionStorage, not
- * replayed on every visit within the same tab — a 10-second takeover on
- * every navigation/refresh would stop being a "moment" and start being an
- * obstacle. Under prefers-reduced-motion it never renders at all, matching
- * PassportReveal's discipline elsewhere in this app: motion is additive,
- * never a gate in front of content.
+ * replayed on every visit within the same tab — even at ~5 seconds, a
+ * takeover on every navigation/refresh would stop being a "moment" and
+ * start being an obstacle. Under prefers-reduced-motion it never renders at
+ * all, matching PassportReveal's discipline elsewhere in this app: motion
+ * is additive, never a gate in front of content.
  */
 export function BrandIntro() {
   const prefersReducedMotion = useReducedMotion();
@@ -68,8 +68,8 @@ export function BrandIntro() {
         >
           <video
             ref={videoRef}
-            src="/video/brand-story.mp4"
-            poster="/video/brand-story-poster.jpg"
+            src="/video/logo-reveal.mp4"
+            poster="/video/logo-reveal-poster.jpg"
             autoPlay
             muted
             playsInline
