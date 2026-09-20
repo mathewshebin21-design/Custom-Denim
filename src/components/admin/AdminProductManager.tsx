@@ -26,6 +26,7 @@ type Product = {
 const CATEGORIES = ["shirts", "t_shirts", "denim", "cargos", "shoes", "activewear", "jackets"];
 const CONDITIONS = ["new", "like_new", "good", "fair"];
 const SOURCES = ["surplus_branded", "thrifted_imported"];
+const CURRENCIES = ["inr", "usd", "eur", "gbp"];
 
 function slugify(title: string): string {
   return title
@@ -55,6 +56,7 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
     condition: "good",
     source: "surplus_branded",
     price: "",
+    currency: "inr",
     quantity: "1",
   });
   const [creating, setCreating] = useState(false);
@@ -80,6 +82,7 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
         condition: form.condition,
         source: form.source,
         priceCents,
+        currency: form.currency,
         quantity: Number(form.quantity) || 1,
       }),
     });
@@ -197,13 +200,27 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
             onChange={(e) => setForm({ ...form, size: e.target.value })}
             className="border border-line px-3 py-2 text-sm"
           />
-          <input
-            placeholder="Price (₹)"
-            type="number"
-            value={form.price}
-            onChange={(e) => setForm({ ...form, price: e.target.value })}
-            className="border border-line px-3 py-2 text-sm"
-          />
+          <div className="flex gap-2">
+            <input
+              placeholder="Price"
+              type="number"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              className="border border-line px-3 py-2 text-sm flex-1 min-w-0"
+            />
+            <select
+              value={form.currency}
+              onChange={(e) => setForm({ ...form, currency: e.target.value })}
+              className="border border-line px-2 py-2 text-sm bg-paper"
+              title="Currency"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </div>
           <input
             placeholder="Quantity"
             type="number"
@@ -245,6 +262,18 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
               className="w-24 border border-line px-2 py-1.5 text-sm"
               title="Price"
             />
+            <select
+              defaultValue={product.currency}
+              onChange={(e) => patchProduct(product.id, { currency: e.target.value })}
+              className="border border-line px-1.5 py-1.5 text-sm bg-paper"
+              title="Currency"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c.toUpperCase()}
+                </option>
+              ))}
+            </select>
             <input
               type="number"
               defaultValue={product.quantity}
