@@ -1,12 +1,29 @@
 @import "tailwindcss";
 
+/*
+ * Ease Wear's real brand palette (from the studio's own style guide:
+ * gold-graffiti "eW EASE WEAR" wordmark, storefront signage, product ads) —
+ * replaces the earlier placeholder "editorial cream/rust" palette invented
+ * before the real brand assets existed. Deliberately a single fixed dark
+ * theme, not prefers-color-scheme-adaptive: every real brand reference is
+ * black-and-gold, with no light variant to fall back to, so a system light
+ * preference would otherwise silently revert the whole site to the old
+ * placeholder look.
+ *
+ * Token names (--color-ink/paper/rust/line) are kept as-is rather than
+ * renamed to their new meaning ("rust" now holds the brand's muted gold
+ * accent, not a literal rust color) — every component in the app already
+ * references these names, and renaming them site-wide is a mechanical,
+ * high-blast-radius change with no functional benefit over updating the
+ * values in this one file.
+ */
 :root {
-  --color-ink: #121214;
-  --color-paper: #f6f3ec;
-  --color-paper-dim: #ece7da;
-  --color-rust: #a8532b;
+  --color-ink: #f2eee6; /* Warm White — primary text */
+  --color-paper: #101010; /* Black — page background */
+  --color-paper-dim: #303030; /* Charcoal — secondary surfaces, cards */
+  --color-rust: #ab9670; /* Muted Gold — accent, matches the wordmark */
   --color-denim: #3f5b76;
-  --color-line: rgba(18, 18, 20, 0.12);
+  --color-line: rgba(242, 238, 230, 0.14);
 
   --background: var(--color-paper);
   --foreground: var(--color-ink);
@@ -23,15 +40,6 @@
   --color-line: var(--color-line);
   --font-display: var(--font-fraunces);
   --font-sans: var(--font-inter);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-ink: #f6f3ec;
-    --color-paper: #121214;
-    --color-paper-dim: #1a1a1d;
-    --color-line: rgba(246, 243, 236, 0.14);
-  }
 }
 
 body {
