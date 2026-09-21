@@ -67,6 +67,13 @@ export type AssistantAction =
       // title is display-only (for a readable confirmation summary) — the
       // actual write is keyed by id alone, same as update_product.
       updates: { id: string; title: string; quantity: number }[];
+    }
+  | {
+      type: "bulk_create_size_variants";
+      templateProductId: string;
+      // display-only, same reasoning as bulk_update_stock's title field.
+      templateTitle: string;
+      items: { size: string; quantity: number }[];
     };
 
 export type AssistantTurnResult =
@@ -110,6 +117,29 @@ Rules:
   call per item. If a name in the list doesn't clearly match any product,
   leave it out and say so in your reply rather than guessing which product
   it meant.
+- When the owner reports per-size stock for a style (e.g. "Snitch Shirt
+  M-5, L-5, Xl-3"), call list_products for that style's name first, then
+  split the sizes into two groups:
+  - Sizes that already have their own matching product (same title and
+    size) → one propose_bulk_update_products call, using the supplier's
+    number as the new absolute quantity (these are total-in-stock counts,
+    not deltas to add on top of what's there).
+  - Sizes with no matching product yet, where another product of the same
+    style already exists under any size (including one with no size set at
+    all) → one propose_bulk_create_size_variants call, using that existing
+    product as templateProductId so its price, category, brand, condition,
+    source, description, images, and video carry over unchanged. Never
+    invent those details yourself.
+  If a style has both kinds, propose the updates first — you can propose
+  the creates in a follow-up reply once the owner confirms those.
+  If nothing under that style exists in the catalog at all, don't propose
+  anything for it: tell the owner what's missing (category, price,
+  condition, source, description) so they can give you those first.
+  If the sizes you're about to create would come from splitting a product
+  that had no size of its own (one row covering the whole style), say so
+  in your reply and ask whether that row's own quantity should be zeroed
+  out afterward, so the style's stock isn't counted twice — don't fold
+  that into the same proposal without asking.
 - "price" in every tool is the currency's major unit (e.g. 499.00 rupees),
   never paise/cents.
 - Keep answers short and concrete — plain sentences with real numbers and
@@ -220,6 +250,34 @@ const TOOLS: FunctionDeclaration[] = [
       required: ["updates"],
     },
   },
+  {
+    name: "propose_bulk_create_size_variants",
+    description:
+      "Propose creating several new size-variant listings for a style that already has at least one product in the catalog, cloning that product's price, category, brand, description, condition, source, images, and video — only the size and quantity differ per new listing. Look up an existing product of this style with list_products first to get its id and title. Never use this for a style with no existing product at all — propose_create_product needs real price/category/condition/source details from the owner for that instead.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        templateProductId: {
+          type: "string",
+          description: "id of an existing product of this style to clone shared details from",
+        },
+        templateTitle: { type: "string", description: "That product's title, for display in the confirmation." },
+        items: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              size: { type: "string" },
+              quantity: { type: "number" },
+            },
+            required: ["size", "quantity"],
+          },
+        },
+      },
+      required: ["templateProductId", "templateTitle", "items"],
+    },
+  },
 ];
 
 const READ_TOOL_NAMES = new Set(["get_inventory_overview", "list_products", "list_retail_orders"]);
@@ -255,6 +313,7 @@ async function runReadTool(name: string, input: Record<string, unknown>): Promis
     return filtered.slice(0, limit).map((p) => ({
       id: p.id,
       title: p.title,
+      size: p.size,
       category: p.category,
       brand: p.brand,
       price: formatPrice(p.priceCents, p.currency),
@@ -348,6 +407,21 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
     return {
       action: { type: "bulk_update_stock", updates },
       summary: `Update stock for ${updates.length} products:\n${lines.join("\n")}`,
+    };
+  }
+
+  if (name === "propose_bulk_create_size_variants") {
+    const templateProductId = String(input.templateProductId);
+    const templateTitle = String(input.templateTitle);
+    const rawItems = Array.isArray(input.items) ? input.items : [];
+    const items = rawItems.map((it) => {
+      const item = it as Record<string, unknown>;
+      return { size: String(item.size), quantity: Number(item.quantity) };
+    });
+    const lines = items.map((it) => `${it.size} → ${it.quantity}`);
+    return {
+      action: { type: "bulk_create_size_variants", templateProductId, templateTitle, items },
+      summary: `Create ${items.length} new "${templateTitle}" size listings:\n${lines.join("\n")}`,
     };
   }
 

@@ -27,7 +27,13 @@ type AssistantAction =
       active?: boolean;
     }
   | { type: "delete_product"; id: string }
-  | { type: "bulk_update_stock"; updates: { id: string; title: string; quantity: number }[] };
+  | { type: "bulk_update_stock"; updates: { id: string; title: string; quantity: number }[] }
+  | {
+      type: "bulk_create_size_variants";
+      templateProductId: string;
+      templateTitle: string;
+      items: { size: string; quantity: number }[];
+    };
 
 type DisplayMessage =
   | { id: string; role: "user"; kind: "text"; text: string; createdAt: string }

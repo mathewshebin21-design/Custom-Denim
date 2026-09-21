@@ -251,6 +251,10 @@ export type CreateProductInput = {
   videoUrl?: string;
 };
 
+export async function getProductForAdmin(id: string) {
+  return db.product.findUnique({ where: { id }, include: { images: { orderBy: { order: "asc" } } } });
+}
+
 export async function createProduct(input: CreateProductInput) {
   const existing = await db.product.findUnique({ where: { slug: input.slug } });
   if (existing) throw new ApiError(409, "A product with this slug already exists");

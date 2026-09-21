@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin, handleApiError } from "@/lib/auth/guards";
-import { createProduct, updateProduct, deleteProduct } from "@/lib/retail/service";
+import { createProduct, updateProduct, deleteProduct, getProductForAdmin } from "@/lib/retail/service";
 import { resolveProposal } from "@/lib/ai/assistantHistory";
 
 // A product's own slug generation, mirroring AdminProductManager.tsx's
@@ -53,6 +53,15 @@ const ActionSchema = z.discriminatedUnion("type", [
     type: z.literal("bulk_update_stock"),
     updates: z
       .array(z.object({ id: z.string().min(1), title: z.string(), quantity: z.number().int().min(0) }))
+      .min(1)
+      .max(50),
+  }),
+  z.object({
+    type: z.literal("bulk_create_size_variants"),
+    templateProductId: z.string().min(1),
+    templateTitle: z.string().min(1),
+    items: z
+      .array(z.object({ size: z.string().min(1), quantity: z.number().int().min(0) }))
       .min(1)
       .max(50),
   }),
@@ -129,23 +138,65 @@ async function applyAction(
     return { body: { ok: true }, status: 200 };
   }
 
-  // bulk_update_stock: each item is independent, so one bad id shouldn't
-  // sink the rest of a shipment's worth of updates — every item is
-  // attempted and the per-item outcome reported, rather than an all-or-
-  // nothing transaction the owner would have to fully retry.
+  if (action.type === "bulk_update_stock") {
+    // Each item is independent, so one bad id shouldn't sink the rest of a
+    // shipment's worth of updates — every item is attempted and the
+    // per-item outcome reported, rather than an all-or-nothing transaction
+    // the owner would have to fully retry.
+    const results = await Promise.allSettled(
+      action.updates.map((u) => updateProduct(u.id, { quantity: u.quantity })),
+    );
+    const outcomes = results.map((r, i) => ({
+      title: action.updates[i].title,
+      ok: r.status === "fulfilled",
+      error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
+    }));
+    const failed = outcomes.filter((o) => !o.ok);
+    if (failed.length > 0) {
+      throw new Error(
+        `${outcomes.length - failed.length}/${outcomes.length} updated. Failed: ${failed.map((f) => `${f.title} (${f.error})`).join(", ")}`,
+      );
+    }
+    return { body: { outcomes }, status: 200 };
+  }
+
+  // bulk_create_size_variants: clones the template product's shared fields
+  // (price, category, brand, description, condition, source, images,
+  // video) into a new listing per size — only size and quantity differ.
+  // Same independent-per-item reporting as bulk_update_stock, since one
+  // size's slug colliding with an existing product shouldn't block the
+  // rest.
+  const template = await getProductForAdmin(action.templateProductId);
+  if (!template) throw new Error(`Template product not found: ${action.templateTitle}`);
   const results = await Promise.allSettled(
-    action.updates.map((u) => updateProduct(u.id, { quantity: u.quantity })),
+    action.items.map((item) =>
+      createProduct({
+        title: template.title,
+        slug: slugify(`${template.title} ${item.size}`),
+        category: template.category,
+        brand: template.brand ?? undefined,
+        description: template.description,
+        size: item.size,
+        condition: template.condition,
+        source: template.source,
+        priceCents: template.priceCents,
+        currency: template.currency,
+        quantity: item.quantity,
+        imageUrls: template.images.map((img) => img.url),
+        videoUrl: template.videoUrl ?? undefined,
+      }),
+    ),
   );
   const outcomes = results.map((r, i) => ({
-    title: action.updates[i].title,
+    size: action.items[i].size,
     ok: r.status === "fulfilled",
     error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
   }));
   const failed = outcomes.filter((o) => !o.ok);
   if (failed.length > 0) {
     throw new Error(
-      `${outcomes.length - failed.length}/${outcomes.length} updated. Failed: ${failed.map((f) => `${f.title} (${f.error})`).join(", ")}`,
+      `${outcomes.length - failed.length}/${outcomes.length} created. Failed: ${failed.map((f) => `${f.size} (${f.error})`).join(", ")}`,
     );
   }
-  return { body: { outcomes }, status: 200 };
+  return { body: { outcomes }, status: 201 };
 }
