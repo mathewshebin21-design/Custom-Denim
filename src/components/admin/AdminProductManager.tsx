@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/Button";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, discountPercent } from "@/lib/format";
 
 type ProductImage = { id: string; url: string };
 type Product = {
@@ -17,6 +17,7 @@ type Product = {
   condition: string;
   source: string;
   priceCents: number;
+  compareAtPriceCents: number | null;
   currency: string;
   quantity: number;
   active: boolean;
@@ -24,7 +25,17 @@ type Product = {
   videoUrl: string | null;
 };
 
-const CATEGORIES = ["shirts", "t_shirts", "denim", "cargos", "shoes", "activewear", "jackets"];
+const CATEGORIES = [
+  { value: "shirts", label: "Shirts" },
+  { value: "t_shirts", label: "T-Shirts" },
+  { value: "denim", label: "Jeans" },
+  { value: "cargos", label: "Cargos & Chinos" },
+  { value: "shoes", label: "Shoes" },
+  { value: "activewear", label: "Activewear" },
+  { value: "denim_jackets", label: "Denim Jackets" },
+  { value: "jackets", label: "Jackets" },
+];
+const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c.value, c.label]));
 const CONDITIONS = ["new", "like_new", "good", "fair"];
 const SOURCES = ["surplus_branded", "thrifted_imported"];
 const CURRENCIES = ["inr", "usd", "eur", "gbp"];
@@ -50,13 +61,14 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
 
   const [form, setForm] = useState({
     title: "",
-    category: CATEGORIES[0],
+    category: CATEGORIES[0].value,
     brand: "",
     description: "",
     size: "",
     condition: "good",
     source: "surplus_branded",
     price: "",
+    compareAtPrice: "",
     currency: "inr",
     quantity: "1",
   });
@@ -83,6 +95,7 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
         condition: form.condition,
         source: form.source,
         priceCents,
+        compareAtPriceCents: form.compareAtPrice ? Math.round(Number(form.compareAtPrice) * 100) : undefined,
         currency: form.currency,
         quantity: Number(form.quantity) || 1,
       }),
@@ -92,7 +105,7 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
       setError(body.error ?? "Could not create product");
     } else {
       setProducts((prev) => [body.product, ...prev]);
-      setForm({ ...form, title: "", brand: "", description: "", size: "", price: "", quantity: "1" });
+      setForm({ ...form, title: "", brand: "", description: "", size: "", price: "", compareAtPrice: "", quantity: "1" });
     }
     setCreating(false);
   }
@@ -181,8 +194,8 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
             className="border border-line px-3 py-2 text-sm bg-paper"
           >
             {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c.replace(/_/g, " ")}
+              <option key={c.value} value={c.value}>
+                {c.label}
               </option>
             ))}
           </select>
@@ -242,6 +255,14 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
             onChange={(e) => setForm({ ...form, quantity: e.target.value })}
             className="border border-line px-3 py-2 text-sm"
           />
+          <input
+            placeholder="Original price (optional — for a discount)"
+            type="number"
+            value={form.compareAtPrice}
+            onChange={(e) => setForm({ ...form, compareAtPrice: e.target.value })}
+            className="border border-line px-3 py-2 text-sm"
+            title="Set higher than Price to show it struck through as a discount"
+          />
           <textarea
             placeholder="Description"
             value={form.description}
@@ -266,7 +287,8 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate">{product.title}</p>
               <p className="text-xs text-ink/50">
-                {product.brand ?? "—"} · {product.category.replace(/_/g, " ")} · {product.source.replace(/_/g, " ")}
+                {product.brand ?? "—"} · {CATEGORY_LABELS[product.category] ?? product.category.replace(/_/g, " ")} ·{" "}
+                {product.source.replace(/_/g, " ")}
               </p>
             </div>
             <input
@@ -275,6 +297,17 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
               onBlur={(e) => patchProduct(product.id, { priceCents: Math.round(Number(e.target.value) * 100) })}
               className="w-24 border border-line px-2 py-1.5 text-sm"
               title="Price"
+            />
+            <input
+              type="number"
+              defaultValue={product.compareAtPriceCents ? product.compareAtPriceCents / 100 : ""}
+              placeholder="Was"
+              onBlur={(e) => {
+                const raw = e.target.value.trim();
+                patchProduct(product.id, { compareAtPriceCents: raw ? Math.round(Number(raw) * 100) : null });
+              }}
+              className="w-20 border border-line px-2 py-1.5 text-sm"
+              title="Original price — set to show a discount, clear to remove it"
             />
             <select
               defaultValue={product.currency}
@@ -338,7 +371,23 @@ export function AdminProductManager({ initialProducts }: { initialProducts: Prod
             >
               Delete
             </button>
-            <p className="text-sm text-ink/60 w-24 text-right">{formatPrice(product.priceCents, product.currency)}</p>
+            <div className="w-24 text-right">
+              {product.compareAtPriceCents && product.compareAtPriceCents > product.priceCents ? (
+                <>
+                  <p className="text-xs text-ink/40 line-through">
+                    {formatPrice(product.compareAtPriceCents, product.currency)}
+                  </p>
+                  <p className="text-sm text-rust">
+                    {formatPrice(product.priceCents, product.currency)}
+                    <span className="ml-1 text-[10px] uppercase tracking-widest">
+                      {discountPercent(product.compareAtPriceCents, product.priceCents)}% off
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-ink/60">{formatPrice(product.priceCents, product.currency)}</p>
+              )}
+            </div>
           </div>
         ))}
         {products.length === 0 && <p className="py-12 text-center text-ink/50">No products yet.</p>}

@@ -49,6 +49,7 @@ export type AssistantAction =
       condition: string;
       source: string;
       priceCents: number;
+      compareAtPriceCents?: number;
       currency: string;
       quantity: number;
     }
@@ -57,6 +58,9 @@ export type AssistantAction =
       id: string;
       title?: string;
       priceCents?: number;
+      // null clears an existing discount, undefined leaves it unchanged —
+      // same convention as the manual admin UI's "Was" field.
+      compareAtPriceCents?: number | null;
       currency?: string;
       quantity?: number;
       active?: boolean;
@@ -141,7 +145,14 @@ Rules:
   out afterward, so the style's stock isn't counted twice — don't fold
   that into the same proposal without asking.
 - "price" in every tool is the currency's major unit (e.g. 499.00 rupees),
-  never paise/cents.
+  never paise/cents. Same for compareAtPrice.
+- To put a product on discount/offer, set compareAtPrice (the original
+  price) alongside price (the new, lower price the owner actually
+  charges) — the storefront shows compareAtPrice struck through next to
+  price automatically. Only set it when the owner asks for a discount;
+  never invent one. To end a discount, use removeDiscount on
+  propose_update_product rather than leaving compareAtPrice unset (unset
+  means "don't change it", not "remove it").
 - Keep answers short and concrete — plain sentences with real numbers and
   product names. No markdown headers or tables.`;
 }
@@ -187,13 +198,22 @@ const TOOLS: FunctionDeclaration[] = [
       type: "object",
       properties: {
         title: { type: "string" },
-        category: { type: "string", description: "One of: shirts, t_shirts, denim, cargos, shoes, activewear, jackets" },
+        category: {
+          type: "string",
+          description:
+            "One of: shirts, t_shirts, denim (shown to customers as \"Jeans\"), cargos, shoes, activewear, denim_jackets, jackets",
+        },
         brand: { type: "string" },
         description: { type: "string" },
         size: { type: "string" },
         condition: { type: "string", description: "One of: new, like_new, good, fair" },
         source: { type: "string", description: "One of: surplus_branded, thrifted_imported" },
         price: { type: "number", description: "Price in the currency's major unit, e.g. 499.00" },
+        compareAtPrice: {
+          type: "number",
+          description:
+            "Optional original price, in the currency's major unit, shown struck through next to price to advertise a discount. Only set this when the owner actually asks for a discount/offer — omit it otherwise. Must be higher than price.",
+        },
         currency: { type: "string", description: "3-letter currency code, e.g. inr, usd" },
         quantity: { type: "number" },
       },
@@ -203,13 +223,19 @@ const TOOLS: FunctionDeclaration[] = [
   {
     name: "propose_update_product",
     description:
-      "Propose changing an existing product's price, currency, stock quantity, title, or active status. Only include fields that should change. Look the product up with list_products first to get its id.",
+      "Propose changing an existing product's price, currency, stock quantity, title, active status, or discount. Only include fields that should change. Look the product up with list_products first to get its id.",
     parametersJsonSchema: {
       type: "object",
       properties: {
         id: { type: "string" },
         title: { type: "string" },
         price: { type: "number", description: "New price in the currency's major unit." },
+        compareAtPrice: {
+          type: "number",
+          description:
+            "Sets or changes the discount: the original price (major unit) shown struck through next to price. Must be higher than price.",
+        },
+        removeDiscount: { type: "boolean", description: "Set true to remove an existing discount entirely." },
         currency: { type: "string" },
         quantity: { type: "number" },
         active: { type: "boolean" },
@@ -346,6 +372,12 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
     const currency = String(input.currency);
     const quantity = Number(input.quantity);
     const priceCents = Math.round(Number(input.price) * 100);
+    const compareAtPriceCents =
+      typeof input.compareAtPrice === "number" ? Math.round(input.compareAtPrice * 100) : undefined;
+    const discountSummary =
+      compareAtPriceCents && compareAtPriceCents > priceCents
+        ? ` (was ${formatPrice(compareAtPriceCents, currency)})`
+        : "";
     return {
       action: {
         type: "create_product",
@@ -357,10 +389,11 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
         condition: String(input.condition ?? "good"),
         source: String(input.source),
         priceCents,
+        compareAtPriceCents,
         currency,
         quantity,
       },
-      summary: `Create "${title}" · ${category.replace(/_/g, " ")} · ${formatPrice(priceCents, currency)} · qty ${quantity}`,
+      summary: `Create "${title}" · ${category.replace(/_/g, " ")} · ${formatPrice(priceCents, currency)}${discountSummary} · qty ${quantity}`,
     };
   }
 
@@ -381,6 +414,14 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
       const priceCents = Math.round(input.price * 100);
       action.priceCents = priceCents;
       changes.push(`price → ${formatPrice(priceCents, currency ?? "inr")}`);
+    }
+    if (typeof input.compareAtPrice === "number") {
+      const compareAtPriceCents = Math.round(input.compareAtPrice * 100);
+      action.compareAtPriceCents = compareAtPriceCents;
+      changes.push(`was → ${formatPrice(compareAtPriceCents, currency ?? "inr")}`);
+    } else if (input.removeDiscount === true) {
+      action.compareAtPriceCents = null;
+      changes.push("discount removed");
     }
     if (typeof input.quantity === "number") {
       action.quantity = input.quantity;

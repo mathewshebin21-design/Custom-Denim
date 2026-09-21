@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, discountPercent } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Shop",
@@ -11,12 +11,14 @@ export const metadata: Metadata = {
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "shirts", label: "Shirts" },
   { value: "t_shirts", label: "T-Shirts" },
-  { value: "denim", label: "Denim" },
+  { value: "denim", label: "Jeans" },
   { value: "cargos", label: "Cargos & Chinos" },
   { value: "shoes", label: "Shoes" },
   { value: "activewear", label: "Activewear" },
+  { value: "denim_jackets", label: "Denim Jackets" },
   { value: "jackets", label: "Jackets" },
 ];
+const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c.value, c.label]));
 
 export default async function ShopPage({
   searchParams,
@@ -114,7 +116,7 @@ export default async function ShopPage({
             )}
             {products.map((product) => (
               <Link key={product.id} href={`/shop/${product.slug}`} className="group block">
-                <div className="aspect-[4/5] bg-paper-dim mb-3 overflow-hidden">
+                <div className="aspect-[4/5] bg-paper-dim mb-3 overflow-hidden relative">
                   {product.images[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element -- remote/storage-hosted product photos, not a local static asset next/image can optimize without extra config
                     <img
@@ -127,11 +129,27 @@ export default async function ShopPage({
                       No photo yet
                     </div>
                   )}
+                  {product.compareAtPriceCents && product.compareAtPriceCents > product.priceCents && (
+                    <span className="absolute top-3 left-3 label-eyebrow text-[10px] bg-rust text-paper px-2 py-1">
+                      {discountPercent(product.compareAtPriceCents, product.priceCents)}% Off
+                    </span>
+                  )}
                 </div>
-                <p className="label-eyebrow text-ink/50 text-[10px] mb-1">{product.brand ?? product.category}</p>
+                <p className="label-eyebrow text-ink/50 text-[10px] mb-1">
+                  {product.brand ?? CATEGORY_LABELS[product.category] ?? product.category}
+                </p>
                 <p className="font-display text-lg leading-tight">{product.title}</p>
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-sm text-ink/70">{formatPrice(product.priceCents, product.currency)}</p>
+                  {product.compareAtPriceCents && product.compareAtPriceCents > product.priceCents ? (
+                    <p className="text-sm">
+                      <span className="text-ink/40 line-through mr-2">
+                        {formatPrice(product.compareAtPriceCents, product.currency)}
+                      </span>
+                      <span className="text-rust">{formatPrice(product.priceCents, product.currency)}</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-ink/70">{formatPrice(product.priceCents, product.currency)}</p>
+                  )}
                   {product.quantity <= 2 && product.quantity > 0 && (
                     <p className="text-[10px] uppercase tracking-widest text-rust">Only {product.quantity} left</p>
                   )}

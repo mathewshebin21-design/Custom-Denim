@@ -14,6 +14,7 @@ type AssistantAction =
       condition: string;
       source: string;
       priceCents: number;
+      compareAtPriceCents?: number;
       currency: string;
       quantity: number;
     }
@@ -22,6 +23,7 @@ type AssistantAction =
       id: string;
       title?: string;
       priceCents?: number;
+      compareAtPriceCents?: number | null;
       currency?: string;
       quantity?: number;
       active?: boolean;

@@ -8,10 +8,11 @@ export const metadata: Metadata = { title: "Inventory — Admin" };
 const CATEGORY_LABELS: Record<string, string> = {
   shirts: "Shirts",
   t_shirts: "T-Shirts",
-  denim: "Denim",
+  denim: "Jeans",
   cargos: "Cargos & Chinos",
   shoes: "Shoes",
   activewear: "Activewear",
+  denim_jackets: "Denim Jackets",
   jackets: "Jackets",
 };
 

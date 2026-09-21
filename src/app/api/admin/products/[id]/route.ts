@@ -12,6 +12,7 @@ const UpdateProductSchema = z.object({
   condition: z.enum(["new", "like_new", "good", "fair"]).optional(),
   source: z.enum(["surplus_branded", "thrifted_imported"]).optional(),
   priceCents: z.number().int().positive().optional(),
+  compareAtPriceCents: z.number().int().positive().nullable().optional(),
   currency: z.string().min(1).optional(),
   quantity: z.number().int().min(0).optional(),
   active: z.boolean().optional(),

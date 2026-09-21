@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, discountPercent } from "@/lib/format";
 import { AddToCartForm } from "@/components/shop/AddToCartForm";
 
 const CONDITION_LABELS: Record<string, string> = {
@@ -60,7 +60,19 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         </p>
         {product.brand && <p className="label-eyebrow text-ink/50 mb-1">{product.brand}</p>}
         <h1 className="font-display text-4xl mb-4">{product.title}</h1>
-        <p className="text-2xl mb-6">{formatPrice(product.priceCents, product.currency)}</p>
+        {product.compareAtPriceCents && product.compareAtPriceCents > product.priceCents ? (
+          <div className="flex items-baseline gap-3 mb-6">
+            <p className="text-2xl text-rust">{formatPrice(product.priceCents, product.currency)}</p>
+            <p className="text-lg text-ink/40 line-through">
+              {formatPrice(product.compareAtPriceCents, product.currency)}
+            </p>
+            <p className="label-eyebrow text-xs bg-rust text-paper px-2 py-1">
+              {discountPercent(product.compareAtPriceCents, product.priceCents)}% Off
+            </p>
+          </div>
+        ) : (
+          <p className="text-2xl mb-6">{formatPrice(product.priceCents, product.currency)}</p>
+        )}
         <p className="text-ink/70 mb-6 max-w-md">{product.description}</p>
 
         <dl className="text-sm text-ink/60 space-y-1 mb-8">

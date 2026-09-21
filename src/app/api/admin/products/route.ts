@@ -26,6 +26,7 @@ const CreateProductSchema = z.object({
   condition: z.enum(["new", "like_new", "good", "fair"]).default("good"),
   source: z.enum(["surplus_branded", "thrifted_imported"]),
   priceCents: z.number().int().positive(),
+  compareAtPriceCents: z.number().int().positive().nullable().optional(),
   currency: z.string().default("inr"),
   quantity: z.number().int().min(0).default(1),
   imageUrls: z.array(z.string()).default([]),

@@ -245,6 +245,7 @@ export type CreateProductInput = {
   condition: string;
   source: string;
   priceCents: number;
+  compareAtPriceCents?: number | null;
   currency?: string;
   quantity: number;
   imageUrls: string[];
@@ -270,6 +271,7 @@ export async function createProduct(input: CreateProductInput) {
       condition: input.condition,
       source: input.source,
       priceCents: input.priceCents,
+      compareAtPriceCents: input.compareAtPriceCents,
       currency: input.currency ?? "inr",
       quantity: input.quantity,
       videoUrl: input.videoUrl,

@@ -27,12 +27,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  customerProfile CustomerProfile?
-  artist          Artist?
-  commissions     Commission[]
-  reviews         Review[]
-  cart            Cart?
-  retailOrders    RetailOrder[]
+  customerProfile   CustomerProfile?
+  artist            Artist?
+  commissions       Commission[]
+  reviews           Review[]
+  cart              Cart?
+  retailOrders      RetailOrder[]
   assistantMessages AssistantMessage[]
 }
 
@@ -385,20 +385,26 @@ model Review {
 // condition: "new" | "like_new" | "good" | "fair"
 // source: "surplus_branded" | "thrifted_imported"
 model Product {
-  id          String  @id @default(cuid())
-  title       String
-  slug        String  @unique
-  category    String // e.g. "shirts" | "t_shirts" | "denim" | "cargos" | "shoes" | "activewear" | "jackets"
-  brand       String?
-  description String
-  size        String?
-  condition   String  @default("good")
-  source      String
-  priceCents  Int
-  currency    String  @default("inr")
-  quantity    Int     @default(1)
-  active      Boolean @default(true)
-  videoUrl    String? // optional single product demo/detail clip, shown on the product page alongside photos
+  id                  String  @id @default(cuid())
+  title               String
+  slug                String  @unique
+  category            String // e.g. "shirts" | "t_shirts" | "denim" | "cargos" | "shoes" | "activewear" | "jackets"
+  brand               String?
+  description         String
+  size                String?
+  condition           String  @default("good")
+  source              String
+  priceCents          Int
+  // The pre-discount price shown struck through next to priceCents (the
+  // actual, charged amount) — null means no discount is running. Purely a
+  // display field: cart/checkout/order-snapshot/revenue math all read
+  // priceCents alone, exactly as before, so a discount never changes what's
+  // actually charged or reported.
+  compareAtPriceCents Int?
+  currency            String  @default("inr")
+  quantity            Int     @default(1)
+  active              Boolean @default(true)
+  videoUrl            String? // optional single product demo/detail clip, shown on the product page alongside photos
 
   images     ProductImage[]
   cartItems  CartItem[]
