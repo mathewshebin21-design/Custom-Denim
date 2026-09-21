@@ -1,5 +1,11 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import {
+  GoogleGenAI,
+  ApiError as GeminiApiError,
+  type Content,
+  type FunctionCall,
+  type FunctionDeclaration,
+} from "@google/genai";
 import { isAiConfigured } from "./gateway";
 import {
   getInventoryOverview,
@@ -9,12 +15,18 @@ import {
 } from "@/lib/retail/service";
 import { formatPrice } from "@/lib/format";
 
-const DEFAULT_MODEL = "claude-sonnet-5";
+// "gemini-flash-latest" tracks whatever Google's newest Flash model is,
+// which is exactly the problem: newly-launched models see heavy demand and
+// intermittent 503s before capacity catches up (confirmed against the real
+// API while wiring this up). Pinning to a specific, already-stable model
+// avoids riding that wave; override via GEMINI_MODEL once a newer one proves
+// reliable for function-calling specifically.
+const DEFAULT_MODEL = "gemini-3.5-flash";
 const MAX_TOOL_ROUNDS = 6;
 
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let client: GoogleGenAI | null = null;
+function getClient(): GoogleGenAI {
+  if (!client) client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   return client;
 }
 
@@ -74,17 +86,17 @@ Rules:
 - Keep answers short and concrete — plain sentences with real numbers and
   product names. No markdown headers or tables.`;
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOLS: FunctionDeclaration[] = [
   {
     name: "get_inventory_overview",
     description:
       "Get store-wide stock and sales numbers: SKU count, units in stock, stock value, out-of-stock/low-stock counts, units sold, retail revenue, average order value, and a per-category breakdown.",
-    input_schema: { type: "object", properties: {} },
+    parametersJsonSchema: { type: "object", properties: {} },
   },
   {
     name: "list_products",
     description: "List products in the catalog, optionally filtered.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Case-insensitive substring match on product title or brand." },
@@ -100,7 +112,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "list_retail_orders",
     description: "List recent retail orders with status, items, and totals.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: {
         status: { type: "string", description: "Filter by order status: pending, paid, fulfilled, or cancelled." },
@@ -111,7 +123,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "propose_create_product",
     description: "Propose creating a new product. Not executed until the owner confirms.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: {
         title: { type: "string" },
@@ -132,7 +144,7 @@ const TOOLS: Anthropic.Tool[] = [
     name: "propose_update_product",
     description:
       "Propose changing an existing product's price, currency, stock quantity, title, or active status. Only include fields that should change. Look the product up with list_products first to get its id.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: {
         id: { type: "string" },
@@ -148,7 +160,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "propose_delete_product",
     description: "Propose permanently deleting a product. Look it up with list_products first to get its id.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: { id: { type: "string" } },
       required: ["id"],
@@ -277,52 +289,60 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
 
 export async function runAssistantTurn(history: ChatMessage[]): Promise<AssistantTurnResult> {
   if (!isAiConfigured()) {
-    return { kind: "message", text: "The AI assistant isn't configured yet (missing ANTHROPIC_API_KEY)." };
+    return { kind: "message", text: "The AI assistant isn't configured yet (missing GEMINI_API_KEY)." };
   }
 
   try {
     return await runAssistantTurnInner(history);
   } catch (err) {
-    // Surface a real Anthropic API error (bad/expired key, no credit
-    // balance, rate limited, temporarily overloaded, ...) as a normal chat
-    // reply instead of a generic 500 — this is exactly the kind of thing an
-    // admin needs to see in plain language to fix themselves (e.g. "add
-    // credits"), not something to dig out of server logs for.
-    if (err instanceof Anthropic.APIError) {
-      // err.error is the parsed API error body ({ error: { type, message } });
-      // prefer its plain-language message over err.message, which otherwise
-      // dumps the whole JSON body into the chat.
-      const body = err.error as { error?: { message?: string } } | undefined;
-      const detail = body?.error?.message ?? err.message;
-      return { kind: "message", text: `The AI assistant hit an error talking to Claude: ${detail}` };
+    // Surface a real Gemini API error (bad/expired key, no quota, rate
+    // limited, temporarily overloaded, ...) as a normal chat reply instead
+    // of a generic 500 — this is exactly the kind of thing an admin needs
+    // to see in plain language to fix themselves, not something to dig out
+    // of server logs for.
+    if (err instanceof GeminiApiError) {
+      // err.message is often the raw JSON response body
+      // ({"error":{"code","message","status"}}) rather than a plain string —
+      // pull out the human-readable part instead of dumping that into chat.
+      let detail = err.message;
+      try {
+        const parsed = JSON.parse(err.message) as { error?: { message?: string } };
+        detail = parsed.error?.message ?? err.message;
+      } catch {
+        // err.message wasn't JSON — use it as-is.
+      }
+      return { kind: "message", text: `The AI assistant hit an error talking to Gemini: ${detail}` };
     }
     throw err;
   }
 }
 
+function historyToContents(history: ChatMessage[]): Content[] {
+  return history.map((m) => ({
+    role: m.role === "user" ? "user" : "model",
+    parts: [{ text: m.text }],
+  }));
+}
+
 async function runAssistantTurnInner(history: ChatMessage[]): Promise<AssistantTurnResult> {
-  const anthropic = getClient();
-  const messages: Anthropic.MessageParam[] = history.map((m) => ({ role: m.role, content: m.text }));
+  const ai = getClient();
+  const contents: Content[] = historyToContents(history);
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await anthropic.messages.create({
-      model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages,
-      tools: TOOLS,
+    const response = await ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+      contents,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        maxOutputTokens: 1024,
+        tools: [{ functionDeclarations: TOOLS }],
+      },
     });
 
-    const toolUses = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
-    );
+    const calls = response.functionCalls ?? [];
 
-    if (toolUses.length === 0) {
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("\n")
-        .trim();
+    if (calls.length === 0) {
+      const text = (response.text ?? "").trim();
       return { kind: "message", text: text || "I don't have anything to add." };
     }
 
@@ -330,21 +350,29 @@ async function runAssistantTurnInner(history: ChatMessage[]): Promise<AssistantT
     // anything — any read-tool calls made in the same response are simply
     // skipped, since the model already had enough context to propose
     // something concrete.
-    const actionCall = toolUses.find((t) => !READ_TOOL_NAMES.has(t.name));
-    if (actionCall) {
-      const { action, summary } = buildProposal(actionCall.name, actionCall.input as Record<string, unknown>);
+    const actionCall = calls.find((c) => c.name && !READ_TOOL_NAMES.has(c.name));
+    if (actionCall?.name) {
+      const { action, summary } = buildProposal(actionCall.name, actionCall.args ?? {});
       return { kind: "proposal", action, summary };
     }
 
-    messages.push({ role: "assistant", content: response.content });
-    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
-      toolUses.map(async (t) => ({
-        type: "tool_result" as const,
-        tool_use_id: t.id,
-        content: JSON.stringify(await runReadTool(t.name, t.input as Record<string, unknown>)),
+    // The model's own turn (including the functionCall parts) has to be
+    // echoed back verbatim before the function results, exactly as Gemini
+    // returned it — reconstructing it by hand risks dropping fields the SDK
+    // set that aren't represented in the FunctionCall type alone.
+    const modelContent = response.candidates?.[0]?.content;
+    if (modelContent) contents.push(modelContent);
+
+    const responseParts = await Promise.all(
+      calls.map(async (c: FunctionCall) => ({
+        functionResponse: {
+          id: c.id,
+          name: c.name,
+          response: { result: await runReadTool(c.name ?? "", c.args ?? {}) },
+        },
       })),
     );
-    messages.push({ role: "user", content: toolResults });
+    contents.push({ role: "user", parts: responseParts });
   }
 
   return { kind: "message", text: "I wasn't able to finish looking that up — try asking a narrower question." };

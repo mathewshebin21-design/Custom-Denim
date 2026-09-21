@@ -20,9 +20,9 @@ Art Passport with QR verification.
 - **Hand-rolled session auth** (bcrypt + signed JWT cookies via `jose`) —
   chosen over NextAuth to avoid an unstable dependency on a framework this
   new; see [Why not NextAuth](#why-not-nextauth)
-- **Anthropic Claude** (`@anthropic-ai/sdk`) for the AI Creative
-  Director / Design Interpreter / Feasibility Assistant, called via forced
-  tool-use for structured JSON output
+- **Google Gemini** (`@google/genai`) for the AI Creative
+  Director / Design Interpreter / Feasibility Assistant / admin assistant,
+  called via forced function-calling for structured JSON output
 - **QR codes** (`qrcode`) for Art Passport verification links
 - **Object storage** (`src/lib/storage/`) for reference images and
   production photos, behind a provider-agnostic `StorageService` — local
@@ -72,8 +72,8 @@ All in `.env` (see `.env.example` for the annotated template):
 |---|---|---|
 | `DATABASE_URL` | yes | PostgreSQL connection string (`postgresql://user:password@host:port/db?schema=public`) — one per environment, never shared between dev/staging/production |
 | `AUTH_SECRET` | yes | Signs session JWTs. Generate with `openssl rand -base64 32` |
-| `ANTHROPIC_API_KEY` | no | Powers the real AI Creative Director / Design Interpreter / Feasibility Assistant. **Without it, the Studio runs in a clearly-labeled offline fallback mode** — deterministic, hand-written creative directions so the whole flow (including versioning, revisions, approval) still works for demos and testing without a key |
-| `ANTHROPIC_MODEL` | no | Overrides the Claude model ID (defaults to `claude-sonnet-5`) |
+| `GEMINI_API_KEY` | no | Powers the real AI Creative Director / Design Interpreter / Feasibility Assistant / admin assistant. **Without it, the Studio runs in a clearly-labeled offline fallback mode** — deterministic, hand-written creative directions so the whole flow (including versioning, revisions, approval) still works for demos and testing without a key |
+| `GEMINI_MODEL` | no | Overrides the Gemini model ID (defaults to `gemini-flash-latest`) |
 | `OPENAI_API_KEY` | no | Powers real AI-generated concept art (OpenAI's image API). **Without it, concept versions fall back to a clearly-labeled placeholder SVG concept card** — see [Concept image generation](#concept-image-generation) |
 | `OPENAI_IMAGE_MODEL` | no | Overrides the OpenAI image model ID (defaults to `gpt-image-1`) |
 | `APP_BASE_URL` | yes | Used to build the Art Passport's QR-code URL and the Stripe Checkout success/cancel redirect URLs |
@@ -85,10 +85,12 @@ All in `.env` (see `.env.example` for the annotated template):
 
 ### Running the AI for real
 
-Set `ANTHROPIC_API_KEY` in `.env` and restart the dev server. No other
+Set `GEMINI_API_KEY` in `.env` and restart the dev server. No other
 change is needed — `src/lib/ai/gateway.ts` checks for the key at call time
 and every AI service (`creativeDirector.ts`, `designInterpreter.ts`,
-`feasibilityAssistant.ts`) has an offline fallback for when it's absent.
+`feasibilityAssistant.ts`) has an offline fallback for when it's absent. The
+admin AI assistant (`src/lib/ai/adminAssistant.ts`) uses the same key and
+falls back to a plain "not configured" reply instead.
 
 ### Concept image generation
 
