@@ -49,6 +49,13 @@ const ActionSchema = z.discriminatedUnion("type", [
     type: z.literal("delete_product"),
     id: z.string().min(1),
   }),
+  z.object({
+    type: z.literal("bulk_update_stock"),
+    updates: z
+      .array(z.object({ id: z.string().min(1), title: z.string(), quantity: z.number().int().min(0) }))
+      .min(1)
+      .max(50),
+  }),
 ]);
 
 const RequestSchema = z.object({
@@ -117,6 +124,28 @@ async function applyAction(
     return { body: { product }, status: 200 };
   }
 
-  await deleteProduct(action.id);
-  return { body: { ok: true }, status: 200 };
+  if (action.type === "delete_product") {
+    await deleteProduct(action.id);
+    return { body: { ok: true }, status: 200 };
+  }
+
+  // bulk_update_stock: each item is independent, so one bad id shouldn't
+  // sink the rest of a shipment's worth of updates — every item is
+  // attempted and the per-item outcome reported, rather than an all-or-
+  // nothing transaction the owner would have to fully retry.
+  const results = await Promise.allSettled(
+    action.updates.map((u) => updateProduct(u.id, { quantity: u.quantity })),
+  );
+  const outcomes = results.map((r, i) => ({
+    title: action.updates[i].title,
+    ok: r.status === "fulfilled",
+    error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
+  }));
+  const failed = outcomes.filter((o) => !o.ok);
+  if (failed.length > 0) {
+    throw new Error(
+      `${outcomes.length - failed.length}/${outcomes.length} updated. Failed: ${failed.map((f) => `${f.title} (${f.error})`).join(", ")}`,
+    );
+  }
+  return { body: { outcomes }, status: 200 };
 }

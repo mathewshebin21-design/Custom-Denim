@@ -61,7 +61,13 @@ export type AssistantAction =
       quantity?: number;
       active?: boolean;
     }
-  | { type: "delete_product"; id: string };
+  | { type: "delete_product"; id: string }
+  | {
+      type: "bulk_update_stock";
+      // title is display-only (for a readable confirmation summary) — the
+      // actual write is keyed by id alone, same as update_product.
+      updates: { id: string; title: string; quantity: number }[];
+    };
 
 export type AssistantTurnResult =
   | { kind: "message"; text: string }
@@ -96,6 +102,14 @@ Rules:
 - When the owner asks for a relative stock change ("add 10", "restock by 5"),
   first call list_products to find the current quantity, then propose the
   resulting absolute quantity.
+- When the owner gives several stock changes at once (e.g. a shipment's
+  received quantities across many products — "Snitch Shirts 28, Jack & Jones
+  Jeans 26, ..."), call list_products (however many times needed) to resolve
+  every item's id and current quantity, then propose all of them together in
+  one propose_bulk_update_products call — never one propose_update_product
+  call per item. If a name in the list doesn't clearly match any product,
+  leave it out and say so in your reply rather than guessing which product
+  it meant.
 - "price" in every tool is the currency's major unit (e.g. 499.00 rupees),
   never paise/cents.
 - Keep answers short and concrete — plain sentences with real numbers and
@@ -180,6 +194,30 @@ const TOOLS: FunctionDeclaration[] = [
       type: "object",
       properties: { id: { type: "string" } },
       required: ["id"],
+    },
+  },
+  {
+    name: "propose_bulk_update_products",
+    description:
+      "Propose a stock-quantity change to several products at once — e.g. applying a shipment's received quantities across many products in one go. Look every product up with list_products first to get its id and current quantity.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        updates: {
+          type: "array",
+          minItems: 2,
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string", description: "The product's title, for display in the confirmation." },
+              quantity: { type: "number", description: "The resulting absolute quantity, not a delta." },
+            },
+            required: ["id", "title", "quantity"],
+          },
+        },
+      },
+      required: ["updates"],
     },
   },
 ];
@@ -300,6 +338,19 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
     return { action: { type: "delete_product", id: String(input.id) }, summary: "Permanently delete this product" };
   }
 
+  if (name === "propose_bulk_update_products") {
+    const rawUpdates = Array.isArray(input.updates) ? input.updates : [];
+    const updates = rawUpdates.map((u) => {
+      const item = u as Record<string, unknown>;
+      return { id: String(item.id), title: String(item.title), quantity: Number(item.quantity) };
+    });
+    const lines = updates.map((u) => `${u.title} → ${u.quantity}`);
+    return {
+      action: { type: "bulk_update_stock", updates },
+      summary: `Update stock for ${updates.length} products:\n${lines.join("\n")}`,
+    };
+  }
+
   throw new Error(`Unknown action tool: ${name}`);
 }
 
@@ -340,20 +391,48 @@ function historyToContents(history: ChatMessage[]): Content[] {
   }));
 }
 
+// Same reasoning as gateway.ts's retry (see the comment there): 503
+// "currently experiencing high demand" is transient and confirmed to clear
+// up within a few seconds, not something worth failing a whole request
+// over — this matters even more here than in gateway.ts's single-shot
+// callStructured, since a multi-round tool-calling turn (e.g. proposing a
+// bulk restock) has more individual model calls that could each hit it.
+const RETRYABLE_STATUS = new Set([429, 503]);
+const RETRY_DELAYS_MS = [500, 1500, 3000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(ai: GoogleGenAI, contents: Content[]) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await ai.models.generateContent({
+        model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+        contents,
+        config: {
+          systemInstruction: buildSystemPrompt(),
+          // Raised from 1024: a bulk-update call's arguments (a dozen
+          // {id, title, quantity} objects) can run long enough to risk
+          // truncation at the old limit.
+          maxOutputTokens: 2048,
+          tools: [{ functionDeclarations: TOOLS }],
+        },
+      });
+    } catch (err) {
+      const retryable = err instanceof GeminiApiError && RETRYABLE_STATUS.has(err.status);
+      if (!retryable || attempt >= RETRY_DELAYS_MS.length) throw err;
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
 async function runAssistantTurnInner(history: ChatMessage[]): Promise<AssistantTurnResult> {
   const ai = getClient();
   const contents: Content[] = historyToContents(history);
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
-      contents,
-      config: {
-        systemInstruction: buildSystemPrompt(),
-        maxOutputTokens: 1024,
-        tools: [{ functionDeclarations: TOOLS }],
-      },
-    });
+    const response = await generateWithRetry(ai, contents);
 
     const calls = response.functionCalls ?? [];
 

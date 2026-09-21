@@ -26,7 +26,8 @@ type AssistantAction =
       quantity?: number;
       active?: boolean;
     }
-  | { type: "delete_product"; id: string };
+  | { type: "delete_product"; id: string }
+  | { type: "bulk_update_stock"; updates: { id: string; title: string; quantity: number }[] };
 
 type DisplayMessage =
   | { id: string; role: "user"; kind: "text"; text: string; createdAt: string }
@@ -267,7 +268,7 @@ export function AdminAssistant() {
                 return (
                   <div key={m.id} className="mr-4">
                     <div className="border border-rust/50 px-3 py-3 text-sm">
-                      <p className="mb-3">{m.summary}</p>
+                      <p className="mb-3 whitespace-pre-wrap">{m.summary}</p>
                       {m.status === "pending" && (
                         <div className="flex gap-2">
                           <Button onClick={() => confirmProposal(m.id)} className="text-xs px-3 py-1.5">
@@ -320,7 +321,7 @@ export function AdminAssistant() {
                       {m.status === "cancelled" && (
                         <p className="text-xs text-ink/50 uppercase tracking-widest">Cancelled</p>
                       )}
-                      {m.status === "error" && <p className="text-xs text-rust">{m.errorText}</p>}
+                      {m.status === "error" && <p className="text-xs text-rust whitespace-pre-wrap">{m.errorText}</p>}
                     </div>
                     <p className="text-[10px] text-ink/40 mt-1">{formatTimestamp(m.createdAt)}</p>
                   </div>
