@@ -1,9 +1,10 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/auth/guards";
+import { hashPassword } from "@/lib/auth/password";
 
 /** Accepts either the top-level client or a transaction client, so
  * `advanceStage` can be called standalone (existing admin routes) or
@@ -373,4 +374,80 @@ export async function publishArtPassport(
   // define completion itself. See the lifecycle comment above.
 
   return passport;
+}
+
+// -----------------------------------------------------------------------
+// Artists — no self-service artist portal exists yet (the "artist" User
+// role exists in the schema but has no login-facing UI), so an artist row
+// is entirely admin-managed: created here, shown publicly on /artists.
+// -----------------------------------------------------------------------
+
+export type CreateArtistInput = {
+  email: string;
+  name: string;
+  bio?: string;
+  photoUrl?: string;
+  styleTags: string[];
+  capacityStatus: string;
+};
+
+export async function listArtistsForAdmin() {
+  return db.artist.findMany({ orderBy: { createdAt: "asc" } });
+}
+
+export async function createArtist(input: CreateArtistInput) {
+  const existing = await db.user.findUnique({ where: { email: input.email } });
+  if (existing) throw new ApiError(409, "A user with this email already exists");
+
+  // Artists can't sign in yet (no artist-facing UI), so this password is
+  // never meant to be used or known — a random one avoids the alternative
+  // of a shared/guessable placeholder sitting in a real production account.
+  const passwordHash = await hashPassword(randomBytes(24).toString("hex"));
+
+  const user = await db.user.create({
+    data: {
+      email: input.email,
+      name: input.name,
+      role: "artist",
+      passwordHash,
+      artist: {
+        create: {
+          name: input.name,
+          bio: input.bio,
+          photoUrl: input.photoUrl,
+          styleTagsJson: JSON.stringify(input.styleTags),
+          capacityStatus: input.capacityStatus,
+        },
+      },
+    },
+    include: { artist: true },
+  });
+  return user.artist!;
+}
+
+export async function updateArtist(
+  id: string,
+  data: Partial<{ name: string; bio: string; photoUrl: string; styleTags: string[]; capacityStatus: string }>,
+) {
+  const artist = await db.artist.findUnique({ where: { id } });
+  if (!artist) throw new ApiError(404, "Artist not found");
+
+  return db.artist.update({
+    where: { id },
+    data: {
+      name: data.name,
+      bio: data.bio,
+      photoUrl: data.photoUrl,
+      styleTagsJson: data.styleTags ? JSON.stringify(data.styleTags) : undefined,
+      capacityStatus: data.capacityStatus,
+    },
+  });
+}
+
+/** Deletes the linked User, which cascades to the Artist row — an Artist
+ * never outlives its User (see the required, unique userId relation above). */
+export async function deleteArtist(id: string) {
+  const artist = await db.artist.findUnique({ where: { id } });
+  if (!artist) throw new ApiError(404, "Artist not found");
+  await db.user.delete({ where: { id: artist.userId } });
 }

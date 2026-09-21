@@ -59,6 +59,11 @@ export function productVideoKey(productId: string, ext: string): string {
   return `public/products/${productId}/video/${assetId(ext)}`;
 }
 
+/** Artist profile photo, shown on the public /artists page — public, namespaced by artistId. */
+export function artistPhotoKey(artistId: string, ext: string): string {
+  return `public/artists/${artistId}/${assetId(ext)}`;
+}
+
 // Reserved for future phases (not implemented yet):
 //   public/passports/{passportId}/{assetId}            — published Art Passport photos
 //   public/garments/{garmentId}/models/{assetId}.glb    — Blender-authored GLB assets

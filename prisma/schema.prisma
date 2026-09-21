@@ -198,6 +198,7 @@ model Artist {
   user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
   bio            String?
+  photoUrl       String?
   styleTagsJson  String  @default("[]")
   portfolioJson  String  @default("[]")
   capacityStatus String  @default("available")

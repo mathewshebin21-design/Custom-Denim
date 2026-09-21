@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { db } from "@/lib/db";
 
 export const metadata: Metadata = {
@@ -26,6 +27,15 @@ export default async function ArtistsPage() {
           const styleTags: string[] = JSON.parse(artist.styleTagsJson || "[]");
           return (
             <div key={artist.id} className="bg-paper p-8">
+              <div className="relative aspect-square w-20 mb-5 overflow-hidden rounded-full bg-paper-dim">
+                {artist.photoUrl ? (
+                  <Image src={artist.photoUrl} alt={artist.name} fill sizes="80px" className="object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center font-display text-2xl text-ink/30">
+                    {artist.name.charAt(0)}
+                  </div>
+                )}
+              </div>
               <p className="font-display text-xl mb-2">{artist.name}</p>
               <p className="text-sm text-ink/70 mb-4">{artist.bio}</p>
               <div className="flex flex-wrap gap-2">
