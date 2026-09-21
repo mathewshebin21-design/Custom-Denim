@@ -35,6 +35,10 @@ type AssistantAction =
       templateProductId: string;
       templateTitle: string;
       items: { size: string; quantity: number }[];
+    }
+  | {
+      type: "bulk_apply_discount";
+      updates: { id: string; title: string; priceCents: number; compareAtPriceCents: number }[];
     };
 
 type DisplayMessage =

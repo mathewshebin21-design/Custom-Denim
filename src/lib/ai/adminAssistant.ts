@@ -78,6 +78,10 @@ export type AssistantAction =
       // display-only, same reasoning as bulk_update_stock's title field.
       templateTitle: string;
       items: { size: string; quantity: number }[];
+    }
+  | {
+      type: "bulk_apply_discount";
+      updates: { id: string; title: string; priceCents: number; compareAtPriceCents: number }[];
     };
 
 export type AssistantTurnResult =
@@ -153,6 +157,18 @@ Rules:
   never invent one. To end a discount, use removeDiscount on
   propose_update_product rather than leaving compareAtPrice unset (unset
   means "don't change it", not "remove it").
+- When the owner asks to discount several products at once ("30% off
+  everything", "discount all jackets by 20%"), call list_products first
+  (unfiltered for the whole store, filtered for a category/subset) to get
+  each product's real priceCents, then propose_bulk_discount rather than
+  one propose_update_product call per item. Compute each product's new
+  price from its current priceCents (or compareAtPriceCents if it already
+  has a discount running, so a second discount never compounds on an
+  already-reduced price) — round to the nearest whole currency unit. If
+  the owner names an exception ("except the leather jacket"), leave that
+  product out of the updates and say so in your reply. The bespoke
+  custom-design jacket on /create isn't a catalog product at all (it has
+  no list_products entry), so it's never part of a storewide discount.
 - Keep answers short and concrete — plain sentences with real numbers and
   product names. No markdown headers or tables.`;
 }
@@ -171,7 +187,7 @@ const TOOLS: FunctionDeclaration[] = [
       type: "object",
       properties: {
         query: { type: "string", description: "Case-insensitive substring match on product title or brand." },
-        category: { type: "string", description: "Exact category filter, e.g. 'denim', 'shirts'." },
+        category: { type: "string", description: "Exact category filter, e.g. 'jeans', 'shirts'." },
         lowStockOnly: {
           type: "boolean",
           description: "Only include products at or below the low-stock threshold (including out of stock).",
@@ -201,7 +217,7 @@ const TOOLS: FunctionDeclaration[] = [
         category: {
           type: "string",
           description:
-            "One of: shirts, t_shirts, denim (shown to customers as \"Jeans\"), cargos, shoes, activewear, denim_jackets, jackets",
+            "One of: shirts, t_shirts, jeans, cargos, shoes, activewear, denim_jackets, jackets",
         },
         brand: { type: "string" },
         description: { type: "string" },
@@ -277,6 +293,35 @@ const TOOLS: FunctionDeclaration[] = [
     },
   },
   {
+    name: "propose_bulk_discount",
+    description:
+      "Apply a discount to several products at once — e.g. 'put everything on 30% off' or 'discount all jackets by 20%, except the leather one'. Call list_products first (no filter for the whole store, or filtered by category/query for a subset) to get every product's real priceCents so you can compute exactly, and leave out anything the owner named as an exception. For each product, base the discount on its current price unless it already has a discount running (compareAtPriceCents set) — in that case use compareAtPriceCents as the original price so a second discount doesn't compound on an already-reduced one.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        updates: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string", description: "The product's title, for display in the confirmation." },
+              price: { type: "number", description: "New, discounted price in the currency's major unit." },
+              compareAtPrice: {
+                type: "number",
+                description: "The original price (major unit) to show struck through — must be higher than price.",
+              },
+              currency: { type: "string", description: "3-letter currency code, e.g. inr, usd." },
+            },
+            required: ["id", "title", "price", "compareAtPrice", "currency"],
+          },
+        },
+      },
+      required: ["updates"],
+    },
+  },
+  {
     name: "propose_bulk_create_size_variants",
     description:
       "Propose creating several new size-variant listings for a style that already has at least one product in the catalog, cloning that product's price, category, brand, description, condition, source, images, and video — only the size and quantity differ per new listing. Look up an existing product of this style with list_products first to get its id and title. Never use this for a style with no existing product at all — propose_create_product needs real price/category/condition/source details from the owner for that instead.",
@@ -343,6 +388,11 @@ async function runReadTool(name: string, input: Record<string, unknown>): Promis
       category: p.category,
       brand: p.brand,
       price: formatPrice(p.priceCents, p.currency),
+      // The formatted `price` above is for reading back to the owner —
+      // computing a discount off it (parsing "₹1,185") would be lossy and
+      // locale-fragile, so the exact cents are exposed too, purely for math.
+      priceCents: p.priceCents,
+      compareAtPriceCents: p.compareAtPriceCents,
       currency: p.currency,
       quantity: p.quantity,
       active: p.active,
@@ -463,6 +513,36 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
     return {
       action: { type: "bulk_create_size_variants", templateProductId, templateTitle, items },
       summary: `Create ${items.length} new "${templateTitle}" size listings:\n${lines.join("\n")}`,
+    };
+  }
+
+  if (name === "propose_bulk_discount") {
+    const rawUpdates = Array.isArray(input.updates) ? input.updates : [];
+    const updates = rawUpdates.map((u) => {
+      const item = u as Record<string, unknown>;
+      const currency = typeof item.currency === "string" ? item.currency : "inr";
+      return {
+        id: String(item.id),
+        title: String(item.title),
+        priceCents: Math.round(Number(item.price) * 100),
+        compareAtPriceCents: Math.round(Number(item.compareAtPrice) * 100),
+        currency,
+      };
+    });
+    const lines = updates.map(
+      (u) => `${u.title}: ${formatPrice(u.compareAtPriceCents, u.currency)} → ${formatPrice(u.priceCents, u.currency)}`,
+    );
+    return {
+      action: {
+        type: "bulk_apply_discount",
+        updates: updates.map(({ id, title, priceCents, compareAtPriceCents }) => ({
+          id,
+          title,
+          priceCents,
+          compareAtPriceCents,
+        })),
+      },
+      summary: `Apply a discount to ${updates.length} products:\n${lines.join("\n")}`,
     };
   }
 

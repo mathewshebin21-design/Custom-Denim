@@ -67,6 +67,20 @@ const ActionSchema = z.discriminatedUnion("type", [
       .min(1)
       .max(50),
   }),
+  z.object({
+    type: z.literal("bulk_apply_discount"),
+    updates: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          title: z.string(),
+          priceCents: z.number().int().positive(),
+          compareAtPriceCents: z.number().int().positive(),
+        }),
+      )
+      .min(1)
+      .max(100),
+  }),
 ]);
 
 const RequestSchema = z.object({
@@ -164,43 +178,65 @@ async function applyAction(
     return { body: { outcomes }, status: 200 };
   }
 
-  // bulk_create_size_variants: clones the template product's shared fields
-  // (price, category, brand, description, condition, source, images,
-  // video) into a new listing per size — only size and quantity differ.
-  // Same independent-per-item reporting as bulk_update_stock, since one
-  // size's slug colliding with an existing product shouldn't block the
-  // rest.
-  const template = await getProductForAdmin(action.templateProductId);
-  if (!template) throw new Error(`Template product not found: ${action.templateTitle}`);
+  if (action.type === "bulk_create_size_variants") {
+    // Clones the template product's shared fields (price, category, brand,
+    // description, condition, source, images, video) into a new listing per
+    // size — only size and quantity differ. Same independent-per-item
+    // reporting as bulk_update_stock, since one size's slug colliding with
+    // an existing product shouldn't block the rest.
+    const template = await getProductForAdmin(action.templateProductId);
+    if (!template) throw new Error(`Template product not found: ${action.templateTitle}`);
+    const results = await Promise.allSettled(
+      action.items.map((item) =>
+        createProduct({
+          title: template.title,
+          slug: slugify(`${template.title} ${item.size}`),
+          category: template.category,
+          brand: template.brand ?? undefined,
+          description: template.description,
+          size: item.size,
+          condition: template.condition,
+          source: template.source,
+          priceCents: template.priceCents,
+          currency: template.currency,
+          quantity: item.quantity,
+          imageUrls: template.images.map((img) => img.url),
+          videoUrl: template.videoUrl ?? undefined,
+        }),
+      ),
+    );
+    const outcomes = results.map((r, i) => ({
+      size: action.items[i].size,
+      ok: r.status === "fulfilled",
+      error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
+    }));
+    const failed = outcomes.filter((o) => !o.ok);
+    if (failed.length > 0) {
+      throw new Error(
+        `${outcomes.length - failed.length}/${outcomes.length} created. Failed: ${failed.map((f) => `${f.size} (${f.error})`).join(", ")}`,
+      );
+    }
+    return { body: { outcomes }, status: 201 };
+  }
+
+  // bulk_apply_discount: same independent-per-item pattern as the other
+  // bulk actions above — one bad id doesn't stop the rest of a storewide
+  // sale from applying.
   const results = await Promise.allSettled(
-    action.items.map((item) =>
-      createProduct({
-        title: template.title,
-        slug: slugify(`${template.title} ${item.size}`),
-        category: template.category,
-        brand: template.brand ?? undefined,
-        description: template.description,
-        size: item.size,
-        condition: template.condition,
-        source: template.source,
-        priceCents: template.priceCents,
-        currency: template.currency,
-        quantity: item.quantity,
-        imageUrls: template.images.map((img) => img.url),
-        videoUrl: template.videoUrl ?? undefined,
-      }),
+    action.updates.map((u) =>
+      updateProduct(u.id, { priceCents: u.priceCents, compareAtPriceCents: u.compareAtPriceCents }),
     ),
   );
   const outcomes = results.map((r, i) => ({
-    size: action.items[i].size,
+    title: action.updates[i].title,
     ok: r.status === "fulfilled",
     error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
   }));
   const failed = outcomes.filter((o) => !o.ok);
   if (failed.length > 0) {
     throw new Error(
-      `${outcomes.length - failed.length}/${outcomes.length} created. Failed: ${failed.map((f) => `${f.size} (${f.error})`).join(", ")}`,
+      `${outcomes.length - failed.length}/${outcomes.length} updated. Failed: ${failed.map((f) => `${f.title} (${f.error})`).join(", ")}`,
     );
   }
-  return { body: { outcomes }, status: 201 };
+  return { body: { outcomes }, status: 200 };
 }

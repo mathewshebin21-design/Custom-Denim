@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "shirts", label: "Shirts" },
   { value: "t_shirts", label: "T-Shirts" },
-  { value: "denim", label: "Jeans" },
+  { value: "jeans", label: "Jeans" },
   { value: "cargos", label: "Cargos & Chinos" },
   { value: "shoes", label: "Shoes" },
   { value: "activewear", label: "Activewear" },
