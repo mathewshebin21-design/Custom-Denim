@@ -280,6 +280,27 @@ export async function runAssistantTurn(history: ChatMessage[]): Promise<Assistan
     return { kind: "message", text: "The AI assistant isn't configured yet (missing ANTHROPIC_API_KEY)." };
   }
 
+  try {
+    return await runAssistantTurnInner(history);
+  } catch (err) {
+    // Surface a real Anthropic API error (bad/expired key, no credit
+    // balance, rate limited, temporarily overloaded, ...) as a normal chat
+    // reply instead of a generic 500 — this is exactly the kind of thing an
+    // admin needs to see in plain language to fix themselves (e.g. "add
+    // credits"), not something to dig out of server logs for.
+    if (err instanceof Anthropic.APIError) {
+      // err.error is the parsed API error body ({ error: { type, message } });
+      // prefer its plain-language message over err.message, which otherwise
+      // dumps the whole JSON body into the chat.
+      const body = err.error as { error?: { message?: string } } | undefined;
+      const detail = body?.error?.message ?? err.message;
+      return { kind: "message", text: `The AI assistant hit an error talking to Claude: ${detail}` };
+    }
+    throw err;
+  }
+}
+
+async function runAssistantTurnInner(history: ChatMessage[]): Promise<AssistantTurnResult> {
   const anthropic = getClient();
   const messages: Anthropic.MessageParam[] = history.map((m) => ({ role: m.role, content: m.text }));
 
