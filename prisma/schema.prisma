@@ -33,6 +33,7 @@ model User {
   reviews         Review[]
   cart            Cart?
   retailOrders    RetailOrder[]
+  assistantMessages AssistantMessage[]
 }
 
 model CustomerProfile {
@@ -502,4 +503,29 @@ model RetailPayment {
   paidAt                  DateTime?
 
   createdAt DateTime @default(now())
+}
+
+// One durable, per-admin conversation with the admin AI assistant
+// (src/lib/ai/adminAssistant.ts) — persisted so the widget resumes the same
+// thread on reload or in a new session instead of starting empty every
+// time, and so past turns (including whether a proposal was ever confirmed)
+// stay available as context for future ones.
+// role: "user" | "assistant"
+// kind: "text" | "proposal" — a proposal additionally carries summary,
+//   actionJson (the serialized AssistantAction), and its resolution status
+// status (proposal only): "pending" | "confirmed" | "cancelled" | "error"
+model AssistantMessage {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  role       String
+  kind       String   @default("text")
+  text       String?
+  summary    String?
+  actionJson String?
+  status     String?
+  errorText  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId, createdAt])
 }

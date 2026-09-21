@@ -67,10 +67,25 @@ export type AssistantTurnResult =
   | { kind: "message"; text: string }
   | { kind: "proposal"; action: AssistantAction; summary: string };
 
-const SYSTEM_PROMPT = `You are the admin operations assistant for Ease Wear, a wearable-art
+// A function, not a constant — must reflect the real date at call time, not
+// whatever it happened to be when this module was first loaded (a
+// serverless function's module scope can be reused across invocations).
+// Conversation history entries are date-stamped too (see
+// assistantHistory.ts's toModelHistory), so the model can ground relative
+// phrases like "last week" or "since Monday" against real dates instead of
+// its training cutoff or the order messages merely happen to arrive in.
+function buildSystemPrompt(): string {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "UTC" });
+  return `You are the admin operations assistant for Ease Wear, a wearable-art
 studio that also runs a retail shop (surplus branded stock + thrifted jackets).
 You help the store owner check inventory, stock, and sales numbers, and make
 catalog changes through conversation.
+
+Today's date is ${today} (UTC). Conversation history lines are prefixed with
+the date they were sent, e.g. "[2026-09-18] restock the jackets" — use both
+to answer date-relative questions ("since last week", "how long ago") against
+real dates, never a guess. That "[date]" prefix is a reading aid for you
+only — never copy it into your own replies.
 
 Rules:
 - Use the read tools (get_inventory_overview, list_products, list_retail_orders)
@@ -85,6 +100,7 @@ Rules:
   never paise/cents.
 - Keep answers short and concrete — plain sentences with real numbers and
   product names. No markdown headers or tables.`;
+}
 
 const TOOLS: FunctionDeclaration[] = [
   {
@@ -333,7 +349,7 @@ async function runAssistantTurnInner(history: ChatMessage[]): Promise<AssistantT
       model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
       contents,
       config: {
-        systemInstruction: SYSTEM_PROMPT,
+        systemInstruction: buildSystemPrompt(),
         maxOutputTokens: 1024,
         tools: [{ functionDeclarations: TOOLS }],
       },
