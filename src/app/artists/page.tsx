@@ -26,7 +26,7 @@ export default async function ArtistsPage() {
         {artists.map((artist) => {
           const styleTags: string[] = JSON.parse(artist.styleTagsJson || "[]");
           return (
-            <div key={artist.id} className="bg-paper p-8">
+            <div key={artist.id} id={artist.id} className="bg-paper p-8 scroll-mt-24">
               <div className="relative aspect-square w-20 mb-5 overflow-hidden rounded-full bg-paper-dim">
                 {artist.photoUrl ? (
                   <Image src={artist.photoUrl} alt={artist.name} fill sizes="80px" className="object-cover" />

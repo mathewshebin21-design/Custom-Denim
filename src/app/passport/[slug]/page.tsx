@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { PassportReveal } from "@/components/passport/PassportReveal";
@@ -45,6 +46,9 @@ export default async function PassportPage(props: PageProps<"/passport/[slug]">)
   const direction = artwork.approvedVersion.creativeDirection;
   const palette: string[] = JSON.parse(direction.colorPalette || "[]");
   const artistAssignment = commission.artistAssignment;
+  const artistStyleTags: string[] = artistAssignment
+    ? JSON.parse(artistAssignment.artist.styleTagsJson || "[]")
+    : [];
 
   return (
     <div className="container-editorial py-24">
@@ -89,6 +93,39 @@ export default async function PassportPage(props: PageProps<"/passport/[slug]">)
               </div>
             )}
           </dl>
+
+          {/* A name alone in the facts table above doesn't say why this
+              piece should be trusted — this card puts a real face and real
+              specialties behind it, and links through to their full profile
+              rather than leaving "Artist" as a dead-end label. */}
+          {artistAssignment && (
+            <div className="mb-10">
+              <p className="label-eyebrow text-ink/50 mb-3">The Artist</p>
+              <Link href={`/artists#${artistAssignment.artist.id}`} className="group flex items-center gap-4">
+                <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-paper-dim">
+                  {artistAssignment.artist.photoUrl ? (
+                    <Image
+                      src={artistAssignment.artist.photoUrl}
+                      alt={artistAssignment.artist.name}
+                      fill
+                      sizes="56px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center font-display text-lg text-ink/30">
+                      {artistAssignment.artist.name.charAt(0)}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold group-hover:text-rust">{artistAssignment.artist.name}</p>
+                  {artistStyleTags.length > 0 && (
+                    <p className="text-xs text-ink/60">{artistStyleTags.join(" · ")}</p>
+                  )}
+                </div>
+              </Link>
+            </div>
+          )}
 
           {artwork.finalDescription && (
             <div className="mb-10">
