@@ -53,6 +53,7 @@ type AssistantAction =
         priceCents: number;
         currency: string;
         quantity: number;
+        active?: boolean;
       }[];
     };
 

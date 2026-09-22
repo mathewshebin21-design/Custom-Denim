@@ -250,6 +250,10 @@ export type CreateProductInput = {
   quantity: number;
   imageUrls: string[];
   videoUrl?: string;
+  // Defaults to true (matching the schema default) when omitted — lets a
+  // product be created as a hidden placeholder (e.g. price/photos still
+  // pending) without a separate update call to deactivate it right after.
+  active?: boolean;
 };
 
 export async function getProductForAdmin(id: string) {
@@ -275,6 +279,7 @@ export async function createProduct(input: CreateProductInput) {
       currency: input.currency ?? "inr",
       quantity: input.quantity,
       videoUrl: input.videoUrl,
+      active: input.active,
       images: { create: input.imageUrls.map((url, order) => ({ url, order })) },
     },
     include: { images: true },

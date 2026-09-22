@@ -102,6 +102,7 @@ const ActionSchema = z.discriminatedUnion("type", [
           priceCents: z.number().int().positive(),
           currency: z.string().min(1),
           quantity: z.number().int().min(0),
+          active: z.boolean().optional(),
         }),
       )
       .min(1)
@@ -286,6 +287,7 @@ async function applyAction(
         priceCents: item.priceCents,
         currency: item.currency,
         quantity: item.quantity,
+        active: item.active,
         imageUrls: [],
       }),
     ),

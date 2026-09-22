@@ -101,6 +101,11 @@ export type AssistantAction =
         priceCents: number;
         currency: string;
         quantity: number;
+        // false creates the product hidden from the storefront — for a
+        // placeholder the owner wants added before a real price/photo is
+        // ready. Omitted (or true) creates it live immediately, same as
+        // every other create tool.
+        active?: boolean;
       }[];
     };
 
@@ -172,6 +177,14 @@ Rules:
   description yourself even to fill a gap, and never reuse one style's
   details for another. Don't wait for them to ask for this explicitly —
   giving you the missing details is the ask.
+  If the owner explicitly wants products added now with the price and
+  photos to follow later, still hold the line on category, condition,
+  source, and description — those still have to come from them — but for
+  price you may use active: false with a clearly-fake placeholder price
+  (e.g. 1) so the item is created but hidden from the storefront and not
+  purchasable. Say plainly in your reply that you did this, and that it
+  needs a real price (and to be switched active) before it can go live —
+  never leave a placeholder-priced item active.
   If the sizes you're about to create would come from splitting a product
   that had no size of its own (one row covering the whole style), say so
   in your reply and ask whether that row's own quantity should be zeroed
@@ -381,7 +394,7 @@ const TOOLS: FunctionDeclaration[] = [
   {
     name: "propose_bulk_create_products",
     description:
-      "Propose creating several brand-new products at once — a new style in multiple sizes, several different new styles (e.g. a batch of new shoe designs, each in its own sizes), or both. Every item is fully independent: nothing is cloned from an existing product, so every field must come from the owner. Never invent price, category, condition, source, or description to fill a gap — if any of those are missing for an item, leave that item out and say what's missing instead of guessing.",
+      "Propose creating several brand-new products at once — a new style in multiple sizes, several different new styles (e.g. a batch of new shoe designs, each in its own sizes), or both. Every item is fully independent: nothing is cloned from an existing product, so every field must come from the owner. Never invent price, category, condition, source, or description to fill a gap — if any of those are missing for an item, leave that item out and say what's missing instead of guessing. Exception: if the owner explicitly asks to add products now and decide the real price/photos later, set active to false and price to a clearly-fake placeholder (e.g. 1) rather than refusing — say plainly in your reply that these were created hidden and still need a real price before they can go live.",
     parametersJsonSchema: {
       type: "object",
       properties: {
@@ -404,6 +417,11 @@ const TOOLS: FunctionDeclaration[] = [
               price: { type: "number", description: "Price in the currency's major unit, e.g. 499.00" },
               currency: { type: "string", description: "3-letter currency code, e.g. inr, usd" },
               quantity: { type: "number" },
+              active: {
+                type: "boolean",
+                description:
+                  "Set to false to create this hidden from the storefront (not purchasable) — for a placeholder awaiting a real price/photo. Omit for a normal, immediately-live product.",
+              },
             },
             required: ["title", "category", "description", "condition", "source", "price", "currency", "quantity"],
           },
@@ -528,10 +546,12 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
         priceCents: Math.round(Number(item.price) * 100),
         currency,
         quantity: Number(item.quantity),
+        active: item.active === false ? false : undefined,
       };
     });
     const lines = items.map(
-      (it) => `${it.title}${it.size ? ` (${it.size})` : ""} · ${formatPrice(it.priceCents, it.currency)} · qty ${it.quantity}`,
+      (it) =>
+        `${it.title}${it.size ? ` (${it.size})` : ""} · ${formatPrice(it.priceCents, it.currency)} · qty ${it.quantity}${it.active === false ? " · HIDDEN (placeholder)" : ""}`,
     );
     return {
       action: { type: "bulk_create_products", items },
