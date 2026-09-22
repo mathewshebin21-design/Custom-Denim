@@ -76,6 +76,11 @@ type DisplayMessage =
       // convenience, not the confirmed proposal itself.
       createdProductId?: string;
       mediaNote?: string;
+      // Same idea as createdProductId, for a bulk_create_products
+      // confirmation — one entry per successfully created item, each with
+      // its own upload state, so a batch of new products can get photos
+      // right in the chat instead of a trip to the Shop admin page.
+      createdItems?: { title: string; size?: string; productId: string; mediaNote?: string }[];
     };
 
 type ProposalMessage = Extract<DisplayMessage, { kind: "proposal" }>;
@@ -216,9 +221,23 @@ export function AdminAssistant() {
       updateMessage(id, { status: "error", errorText: body.error ?? "Could not apply this change" });
       return;
     }
+    const createdItems =
+      message.action.type === "bulk_create_products"
+        ? (Array.isArray(body.outcomes) ? body.outcomes : [])
+            // Only items that actually got created carry a productId —
+            // a partial failure still lets the rest get photos.
+            .filter((o: { ok?: boolean; productId?: string }) => o.ok && o.productId)
+            .map((o: { title: string; size?: string; productId: string }) => ({
+              title: o.title,
+              size: o.size,
+              productId: o.productId,
+            }))
+        : undefined;
+
     updateMessage(id, {
       status: "confirmed",
       createdProductId: message.action.type === "create_product" ? body.product?.id : undefined,
+      createdItems,
     });
   }
 
@@ -279,6 +298,64 @@ export function AdminAssistant() {
       return;
     }
     updateMessage(messageId, { mediaNote: "Video added." });
+  }
+
+  function updateItemNote(messageId: string, productId: string, note: string) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId && m.kind === "proposal" && m.createdItems
+          ? { ...m, createdItems: m.createdItems.map((it) => (it.productId === productId ? { ...it, mediaNote: note } : it)) }
+          : m,
+      ),
+    );
+  }
+
+  async function attachPhotoToItem(messageId: string, productId: string, file: File) {
+    updateItemNote(messageId, productId, "Uploading photo…");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("productId", productId);
+    const uploadRes = await fetch("/api/admin/products/upload", { method: "POST", body: formData });
+    const uploadBody = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      updateItemNote(messageId, productId, uploadBody.error ?? "Could not upload photo");
+      return;
+    }
+    const attachRes = await fetch(`/api/admin/products/${productId}/images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: uploadBody.url }),
+    });
+    if (!attachRes.ok) {
+      const attachBody = await attachRes.json().catch(() => ({}));
+      updateItemNote(messageId, productId, attachBody.error ?? "Could not attach photo");
+      return;
+    }
+    updateItemNote(messageId, productId, "Photo added.");
+  }
+
+  async function attachVideoToItem(messageId: string, productId: string, file: File) {
+    updateItemNote(messageId, productId, "Uploading video…");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("productId", productId);
+    const uploadRes = await fetch("/api/admin/products/upload-video", { method: "POST", body: formData });
+    const uploadBody = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      updateItemNote(messageId, productId, uploadBody.error ?? "Could not upload video");
+      return;
+    }
+    const patchRes = await fetch(`/api/admin/products/${productId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoUrl: uploadBody.url }),
+    });
+    if (!patchRes.ok) {
+      const patchBody = await patchRes.json().catch(() => ({}));
+      updateItemNote(messageId, productId, patchBody.error ?? "Could not attach video");
+      return;
+    }
+    updateItemNote(messageId, productId, "Video added.");
   }
 
   return (
@@ -360,6 +437,45 @@ export function AdminAssistant() {
                             </div>
                           )}
                           {m.mediaNote && <p className="text-xs text-ink/50 mt-2">{m.mediaNote}</p>}
+                          {m.action.type === "bulk_create_products" && m.createdItems && m.createdItems.length > 0 && (
+                            <div className="border-t border-line pt-2 mt-2 space-y-2">
+                              {m.createdItems.map((item) => (
+                                <div key={item.productId} className="flex flex-wrap items-center gap-3">
+                                  <p className="text-xs text-ink/70 flex-1 min-w-0 truncate">
+                                    {item.title}
+                                    {item.size ? ` (${item.size})` : ""}
+                                  </p>
+                                  <label className="text-xs text-ink/50 hover:text-rust cursor-pointer uppercase tracking-widest">
+                                    Photo
+                                    <input
+                                      type="file"
+                                      accept="image/png,image/jpeg,image/webp"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) attachPhotoToItem(m.id, item.productId, file);
+                                        e.target.value = "";
+                                      }}
+                                    />
+                                  </label>
+                                  <label className="text-xs text-ink/50 hover:text-rust cursor-pointer uppercase tracking-widest">
+                                    Video
+                                    <input
+                                      type="file"
+                                      accept="video/mp4,video/quicktime"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) attachVideoToItem(m.id, item.productId, file);
+                                        e.target.value = "";
+                                      }}
+                                    />
+                                  </label>
+                                  {item.mediaNote && <p className="text-[10px] text-ink/50 w-full">{item.mediaNote}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                       {m.status === "cancelled" && (

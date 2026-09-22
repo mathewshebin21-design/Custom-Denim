@@ -294,6 +294,9 @@ async function applyAction(
     title: action.items[i].title,
     size: action.items[i].size,
     ok: r.status === "fulfilled",
+    // Only present on success — lets the chat UI offer a photo/video
+    // upload per created item without a second round-trip to look it up.
+    productId: r.status === "fulfilled" ? r.value.id : undefined,
     error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
   }));
   const failed = outcomes.filter((o) => !o.ok);
