@@ -87,6 +87,26 @@ const ActionSchema = z.discriminatedUnion("type", [
       .min(1)
       .max(100),
   }),
+  z.object({
+    type: z.literal("bulk_create_products"),
+    items: z
+      .array(
+        z.object({
+          title: z.string().min(1),
+          category: z.string().min(1),
+          brand: z.string().optional(),
+          description: z.string().min(1),
+          size: z.string().optional(),
+          condition: z.enum(["new", "like_new", "good", "fair"]),
+          source: z.enum(["surplus_branded", "thrifted_imported"]),
+          priceCents: z.number().int().positive(),
+          currency: z.string().min(1),
+          quantity: z.number().int().min(0),
+        }),
+      )
+      .min(1)
+      .max(200),
+  }),
 ]);
 
 const RequestSchema = z.object({
@@ -225,24 +245,62 @@ async function applyAction(
     return { body: { outcomes }, status: 201 };
   }
 
-  // bulk_apply_discount: same independent-per-item pattern as the other
-  // bulk actions above — one bad id doesn't stop the rest of a storewide
-  // sale from applying.
+  if (action.type === "bulk_apply_discount") {
+    // Same independent-per-item pattern as the other bulk actions above —
+    // one bad id doesn't stop the rest of a storewide sale from applying.
+    const results = await Promise.allSettled(
+      action.updates.map((u) =>
+        updateProduct(u.id, { priceCents: u.priceCents, compareAtPriceCents: u.compareAtPriceCents }),
+      ),
+    );
+    const outcomes = results.map((r, i) => ({
+      title: action.updates[i].title,
+      ok: r.status === "fulfilled",
+      error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
+    }));
+    const failed = outcomes.filter((o) => !o.ok);
+    if (failed.length > 0) {
+      throw new Error(
+        `${outcomes.length - failed.length}/${outcomes.length} updated. Failed: ${failed.map((f) => `${f.title} (${f.error})`).join(", ")}`,
+      );
+    }
+    return { body: { outcomes }, status: 200 };
+  }
+
+  // bulk_create_products: fully independent new products — no cloning, so
+  // every field comes straight from the proposal. Same independent-per-item
+  // reporting as the other bulk-create action, since one slug collision
+  // (e.g. two items resolving to the same title+size) shouldn't sink the
+  // rest of a large onboarding batch.
   const results = await Promise.allSettled(
-    action.updates.map((u) =>
-      updateProduct(u.id, { priceCents: u.priceCents, compareAtPriceCents: u.compareAtPriceCents }),
+    action.items.map((item) =>
+      createProduct({
+        title: item.title,
+        slug: slugify(item.size ? `${item.title} ${item.size}` : item.title),
+        category: item.category,
+        brand: item.brand,
+        description: item.description,
+        size: item.size,
+        condition: item.condition,
+        source: item.source,
+        priceCents: item.priceCents,
+        currency: item.currency,
+        quantity: item.quantity,
+        imageUrls: [],
+      }),
     ),
   );
   const outcomes = results.map((r, i) => ({
-    title: action.updates[i].title,
+    title: action.items[i].title,
+    size: action.items[i].size,
     ok: r.status === "fulfilled",
     error: r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : "Failed") : undefined,
   }));
   const failed = outcomes.filter((o) => !o.ok);
   if (failed.length > 0) {
     throw new Error(
-      `${outcomes.length - failed.length}/${outcomes.length} updated. Failed: ${failed.map((f) => `${f.title} (${f.error})`).join(", ")}`,
+      `${outcomes.length - failed.length}/${outcomes.length} created. Failed: ${failed.map((f) => `${f.title}${f.size ? ` (${f.size})` : ""} (${f.error})`).join(", ")}`,
     );
   }
-  return { body: { outcomes }, status: 200 };
+  return { body: { outcomes }, status: 201 };
 }

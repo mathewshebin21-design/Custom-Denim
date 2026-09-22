@@ -39,6 +39,21 @@ type AssistantAction =
   | {
       type: "bulk_apply_discount";
       updates: { id: string; title: string; priceCents: number; compareAtPriceCents: number }[];
+    }
+  | {
+      type: "bulk_create_products";
+      items: {
+        title: string;
+        category: string;
+        brand?: string;
+        description: string;
+        size?: string;
+        condition: string;
+        source: string;
+        priceCents: number;
+        currency: string;
+        quantity: number;
+      }[];
     };
 
 type DisplayMessage =

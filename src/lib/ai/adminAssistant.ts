@@ -82,6 +82,26 @@ export type AssistantAction =
   | {
       type: "bulk_apply_discount";
       updates: { id: string; title: string; priceCents: number; compareAtPriceCents: number }[];
+    }
+  | {
+      type: "bulk_create_products";
+      // Each item is a fully independent new product — a different size of
+      // the same style, a different style entirely, or both at once (e.g.
+      // onboarding several new shoe designs, each in several sizes). Unlike
+      // bulk_create_size_variants, nothing is cloned from an existing
+      // product — every field here has to come from the owner.
+      items: {
+        title: string;
+        category: string;
+        brand?: string;
+        description: string;
+        size?: string;
+        condition: string;
+        source: string;
+        priceCents: number;
+        currency: string;
+        quantity: number;
+      }[];
     };
 
 export type AssistantTurnResult =
@@ -143,14 +163,15 @@ Rules:
   If nothing under that style exists in the catalog at all, don't propose
   anything for it: tell the owner what's missing (category, price,
   condition, source, description) so they can give you those first. Once
-  they do give you those details for a brand-new style with several
-  sizes, propose the first size with propose_create_product (using
-  exactly what they gave you — never invent category, price, condition,
-  source, or description yourself even to fill a gap); after the owner
-  confirms that, propose the remaining sizes in one
-  propose_bulk_create_size_variants call using the product you just
-  created as templateProductId. Don't wait for them to ask for this
-  explicitly — giving you the missing details is the ask.
+  they give you those details for one or more brand-new styles — whether
+  it's one style in several sizes, or several different new styles at
+  once (e.g. a batch of new shoe designs, each in its own sizes) —
+  propose all of it together in one propose_bulk_create_products call,
+  one item per (style, size) combination, using exactly what the owner
+  gave you for each — never invent category, price, condition, source, or
+  description yourself even to fill a gap, and never reuse one style's
+  details for another. Don't wait for them to ask for this explicitly —
+  giving you the missing details is the ask.
   If the sizes you're about to create would come from splitting a product
   that had no size of its own (one row covering the whole style), say so
   in your reply and ask whether that row's own quantity should be zeroed
@@ -332,7 +353,7 @@ const TOOLS: FunctionDeclaration[] = [
   {
     name: "propose_bulk_create_size_variants",
     description:
-      "Propose creating several new size-variant listings for a style that already has at least one product in the catalog, cloning that product's price, category, brand, description, condition, source, images, and video — only the size and quantity differ per new listing. Look up an existing product of this style with list_products first to get its id and title. Never use this for a style with no existing product at all — propose_create_product needs real price/category/condition/source details from the owner for that instead.",
+      "Propose creating several new size-variant listings for a style that already has at least one product in the catalog, cloning that product's price, category, brand, description, condition, source, images, and video — only the size and quantity differ per new listing. Look up an existing product of this style with list_products first to get its id and title. Never use this for a style with no existing product at all — use propose_bulk_create_products instead, with real price/category/condition/source details from the owner.",
     parametersJsonSchema: {
       type: "object",
       properties: {
@@ -355,6 +376,40 @@ const TOOLS: FunctionDeclaration[] = [
         },
       },
       required: ["templateProductId", "templateTitle", "items"],
+    },
+  },
+  {
+    name: "propose_bulk_create_products",
+    description:
+      "Propose creating several brand-new products at once — a new style in multiple sizes, several different new styles (e.g. a batch of new shoe designs, each in its own sizes), or both. Every item is fully independent: nothing is cloned from an existing product, so every field must come from the owner. Never invent price, category, condition, source, or description to fill a gap — if any of those are missing for an item, leave that item out and say what's missing instead of guessing.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              category: {
+                type: "string",
+                description: "One of: shirts, t_shirts, jeans, cargos, shoes, activewear, denim_jackets, jackets",
+              },
+              brand: { type: "string" },
+              description: { type: "string" },
+              size: { type: "string" },
+              condition: { type: "string", description: "One of: new, like_new, good, fair" },
+              source: { type: "string", description: "One of: surplus_branded, thrifted_imported" },
+              price: { type: "number", description: "Price in the currency's major unit, e.g. 499.00" },
+              currency: { type: "string", description: "3-letter currency code, e.g. inr, usd" },
+              quantity: { type: "number" },
+            },
+            required: ["title", "category", "description", "condition", "source", "price", "currency", "quantity"],
+          },
+        },
+      },
+      required: ["items"],
     },
   },
 ];
@@ -452,6 +507,35 @@ function buildProposal(name: string, input: Record<string, unknown>): { action: 
         quantity,
       },
       summary: `Create "${title}" · ${category.replace(/_/g, " ")} · ${formatPrice(priceCents, currency)}${discountSummary} · qty ${quantity}`,
+    };
+  }
+
+  if (name === "propose_bulk_create_products") {
+    const rawItems = Array.isArray(input.items) ? input.items : [];
+    const items = rawItems.map((it) => {
+      const item = it as Record<string, unknown>;
+      const title = String(item.title);
+      const category = String(item.category);
+      const currency = String(item.currency);
+      return {
+        title,
+        category,
+        brand: typeof item.brand === "string" && item.brand ? item.brand : undefined,
+        description: String(item.description ?? title),
+        size: typeof item.size === "string" && item.size ? item.size : undefined,
+        condition: String(item.condition ?? "good"),
+        source: String(item.source),
+        priceCents: Math.round(Number(item.price) * 100),
+        currency,
+        quantity: Number(item.quantity),
+      };
+    });
+    const lines = items.map(
+      (it) => `${it.title}${it.size ? ` (${it.size})` : ""} · ${formatPrice(it.priceCents, it.currency)} · qty ${it.quantity}`,
+    );
+    return {
+      action: { type: "bulk_create_products", items },
+      summary: `Create ${items.length} new products:\n${lines.join("\n")}`,
     };
   }
 
