@@ -4,6 +4,12 @@ import { requireAdmin, handleApiError } from "@/lib/auth/guards";
 import { createProduct, updateProduct, deleteProduct, getProductForAdmin } from "@/lib/retail/service";
 import { resolveProposal } from "@/lib/ai/assistantHistory";
 
+// A bulk action here can be dozens of independent DB writes
+// (Promise.allSettled over every item) — cheap individually, but worth the
+// same explicit headroom as the chat route rather than relying on whatever
+// the platform's default happens to be.
+export const maxDuration = 60;
+
 // A product's own slug generation, mirroring AdminProductManager.tsx's
 // client-side slugify (there's no shared util for this one-liner — same
 // small, private-copy pattern already used elsewhere in this codebase, e.g.

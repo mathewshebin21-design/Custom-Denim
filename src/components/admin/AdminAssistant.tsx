@@ -144,41 +144,58 @@ export function AdminAssistant() {
     scrollToBottom();
     setLoading(true);
 
-    const res = await fetch("/api/admin/assistant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
-    });
-    const body = await res.json().catch(() => ({}));
-    setLoading(false);
+    // A slow tool-calling turn can still outlast the request (a dropped
+    // connection, a proxy timeout) even with the route's own maxDuration —
+    // wrapped so that case surfaces as a real error instead of leaving the
+    // chat stuck on "Thinking…" forever with setLoading(false) never reached.
+    try {
+      const res = await fetch("/api/admin/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      });
+      const body = await res.json().catch(() => ({}));
 
-    if (!res.ok) {
-      setError(body.error ?? "Something went wrong");
-      return;
-    }
+      if (!res.ok) {
+        setError(body.error ?? "Something went wrong");
+        return;
+      }
 
-    const createdAt = body.createdAt ?? new Date().toISOString();
-    if (body.kind === "proposal") {
-      setMessages((prev) => [
-        ...prev,
-        { id: body.id, role: "assistant", kind: "proposal", summary: body.summary, action: body.action, status: "pending", createdAt },
-      ]);
-    } else {
-      setMessages((prev) => [...prev, { id: body.id, role: "assistant", kind: "text", text: body.text, createdAt }]);
+      const createdAt = body.createdAt ?? new Date().toISOString();
+      if (body.kind === "proposal") {
+        setMessages((prev) => [
+          ...prev,
+          { id: body.id, role: "assistant", kind: "proposal", summary: body.summary, action: body.action, status: "pending", createdAt },
+        ]);
+      } else {
+        setMessages((prev) => [...prev, { id: body.id, role: "assistant", kind: "text", text: body.text, createdAt }]);
+      }
+      scrollToBottom();
+    } catch {
+      setError("Lost connection while waiting for a reply — it may have taken too long. Try again, or ask a narrower question.");
+    } finally {
+      setLoading(false);
     }
-    scrollToBottom();
   }
 
   async function confirmProposal(id: string) {
     const message = messages.find((m) => m.id === id);
     if (!message || message.kind !== "proposal") return;
 
-    const res = await fetch("/api/admin/assistant/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messageId: id, action: message.action }),
-    });
-    const body = await res.json().catch(() => ({}));
+    let res: Response;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same untyped response-body pattern as send() above
+    let body: any;
+    try {
+      res = await fetch("/api/admin/assistant/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: id, action: message.action }),
+      });
+      body = await res.json().catch(() => ({}));
+    } catch {
+      updateMessage(id, { status: "error", errorText: "Lost connection while applying this — check the catalog before retrying, it may have partially applied." });
+      return;
+    }
 
     if (!res.ok) {
       updateMessage(id, { status: "error", errorText: body.error ?? "Could not apply this change" });

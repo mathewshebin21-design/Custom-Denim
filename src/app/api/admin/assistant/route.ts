@@ -5,6 +5,13 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import { runAssistantTurn } from "@/lib/ai/adminAssistant";
 import { appendAssistantResult, appendUserMessage, listAssistantMessages, toModelHistory } from "@/lib/ai/assistantHistory";
 
+// A multi-round tool-calling turn (e.g. resolving a dozen products for a
+// bulk restock, with retries on a transient Gemini 503/429) can run well
+// past the platform's default function timeout — without this, a slow
+// turn is killed mid-request and the owner sees the chat just go silent,
+// with no error to act on.
+export const maxDuration = 60;
+
 const ChatSchema = z.object({ message: z.string().min(1).max(4000) });
 
 const LIMIT = 30;
